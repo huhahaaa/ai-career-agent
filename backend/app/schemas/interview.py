@@ -1,11 +1,11 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel
 
 
 class InterviewStartRequest(BaseModel):
     resume_text: str
-    target_job_id: Optional[int] = None
+    target_job_id: Optional[Union[int, str]] = None
     target_position: str = ""
 
 
