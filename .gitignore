@@ -38,6 +38,7 @@ data/raw_jobs/*
 !data/raw_jobs/.gitkeep
 !data/raw_jobs/*.csv
 !data/raw_jobs/*.jsonl
+!data/raw_jobs/*.json
 data/processed/*
 !data/processed/.gitkeep
 !data/processed/*.jsonl
