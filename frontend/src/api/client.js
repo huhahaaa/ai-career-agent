@@ -159,19 +159,22 @@ export function getDashboard() {
 }
 
 export function getResumes() {
-  return USE_MOCK ? Promise.resolve([]) : unavailable('简历列表');
+  return mockFallback(() => request('/resumes'), () => []);
 }
 
-export function uploadResume() {
-  return USE_MOCK ? Promise.resolve({ status: 'processing' }) : unavailable('简历文件上传');
+export function uploadResume(formData) {
+  return mockFallback(
+    () => request('/resumes/upload', { method: 'POST', body: formData }),
+    () => ({ status: 'pending' }),
+  );
 }
 
-export function deleteResume() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('简历删除');
+export function deleteResume(id) {
+  return mockFallback(() => request(`/resumes/${id}`, { method: 'DELETE' }), () => null);
 }
 
-export function getResumeDetail() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('简历详情');
+export function getResumeDetail(id) {
+  return mockFallback(() => request(`/resumes/${id}`), () => null);
 }
 
 export function getJobs(params = {}) {
@@ -273,16 +276,28 @@ export function sendMessage(interviewId, answer) {
   );
 }
 
-export function endInterview() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('面试结束与报告保存');
+export function endInterview(interviewId) {
+  return mockFallback(
+    () => request(`/interviews/${interviewId}/finish`, { method: 'POST' }),
+    () => ({
+      session_id: interviewId,
+      overall_score: 72,
+      dimension_averages: {},
+      total_questions_answered: 1,
+      details: [],
+      star_suggestions: [],
+      practice_plan: '继续补充 STAR 案例、技术细节和量化结果。',
+      summary: '本次面试已生成模拟报告。',
+    }),
+  );
 }
 
 export function getInterviewHistory() {
-  return USE_MOCK ? Promise.resolve([]) : unavailable('面试历史');
+  return mockFallback(() => request('/interviews/history'), () => []);
 }
 
-export function getInterviewReport() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('面试报告');
+export function getInterviewReport(id) {
+  return mockFallback(() => request(`/interviews/${id}/report`), () => null);
 }
 
 export function getCityDistribution() {

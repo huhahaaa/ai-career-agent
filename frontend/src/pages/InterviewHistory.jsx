@@ -186,6 +186,25 @@ export default function InterviewHistory() {
                     </div>
                   </>
                 )}
+                {selectedReport.agent_report && (
+                  <>
+                    <div className="feedback-section">
+                      <h4>STAR 改写建议</h4>
+                      <ul>
+                        {selectedReport.agent_report.star_suggestions?.map((item, index) => (
+                          <li key={index}>
+                            <strong>{item.question}</strong>
+                            <p style={{ whiteSpace: 'pre-wrap' }}>{item.star_rewrite}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="feedback-section">
+                      <h4>下一步练习计划</h4>
+                      <p style={{ whiteSpace: 'pre-wrap' }}>{selectedReport.agent_report.practice_plan}</p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

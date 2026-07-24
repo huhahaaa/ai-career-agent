@@ -1,10 +1,17 @@
+import json
 from typing import List
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_roles
-from app.api.v1.endpoints.jobs import JOB_STORE
+from app.api.v1.endpoints.jobs import job_to_vector_payload
 from app.core.exceptions import AppException
+from app.db.session import get_db
+from app.models.job import JobPosting
+from app.models.matching import MatchingRecord
+from app.models.resume import Resume, ResumeVersion
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.matching import (
@@ -31,10 +38,74 @@ def _vector_service_error(exc: Exception) -> AppException:
     )
 
 
+def _coerce_database_job_id(value: str) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _save_matching_records(
+    db: Session,
+    user: User,
+    payload: MatchRequest,
+    matches: List[dict],
+) -> None:
+    persisted_matches = []
+    for match in matches:
+        job_id = _coerce_database_job_id(match.get("job_id", ""))
+        if job_id is None:
+            continue
+        job = db.get(JobPosting, job_id)
+        if job is None:
+            continue
+        persisted_matches.append((job, match))
+
+    if not persisted_matches:
+        return
+
+    resume = Resume(
+        user_id=user.id,
+        title=payload.target_position or "岗位匹配简历快照",
+        current_version_number=1,
+    )
+    db.add(resume)
+    db.flush()
+    db.add(
+        ResumeVersion(
+            resume_id=resume.id,
+            version_number=1,
+            file_name="matching-input.txt",
+            file_path="",
+            content=payload.resume_text,
+        )
+    )
+    for job, match in persisted_matches:
+        db.add(
+            MatchingRecord(
+                user_id=user.id,
+                resume_id=resume.id,
+                job_id=job.id,
+                total_score=round(float(match.get("score", 0))),
+                details=json.dumps(
+                    {
+                        "target_position": payload.target_position,
+                        "score": match.get("score", 0),
+                        "reason": match.get("reason", ""),
+                        "source_link": match.get("source_link", ""),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+    db.commit()
+
+
 @router.post("/run", response_model=ApiResponse[MatchResponse])
 def run_matching(
     payload: MatchRequest,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[MatchResponse]:
     try:
         matches = match_resume_to_jobs(
@@ -44,7 +115,35 @@ def run_matching(
         )
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
+    _save_matching_records(db, current_user, payload, matches)
     return success_response(MatchResponse(matches=matches))
+
+
+@router.get("/history", response_model=ApiResponse[List[dict]])
+def matching_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[List[dict]]:
+    records = db.scalars(
+        select(MatchingRecord)
+        .where(MatchingRecord.user_id == current_user.id)
+        .order_by(MatchingRecord.created_at.desc(), MatchingRecord.id.desc())
+    ).all()
+    return success_response(
+        [
+            {
+                "id": record.id,
+                "resume_id": record.resume_id,
+                "job_id": record.job_id,
+                "job_title": record.job.title if record.job else "",
+                "company": record.job.company if record.job else "",
+                "total_score": record.total_score,
+                "details": json.loads(record.details or "{}"),
+                "created_at": record.created_at,
+            }
+            for record in records
+        ]
+    )
 
 
 @router.post(
@@ -54,14 +153,15 @@ def run_matching(
 def index_job(
     job_id: int,
     _reviewer: User = Depends(require_roles("reviewer")),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[JobIndexResult]:
-    job = JOB_STORE.get(job_id)
+    job = db.get(JobPosting, job_id)
     if job is None:
         raise AppException(404, 40401, "job not found")
-    if job.get("status") != "approved":
+    if job.status != "approved":
         raise AppException(409, 40903, "only approved jobs can be indexed")
     try:
-        result = index_approved_job(job)
+        result = index_approved_job(job_to_vector_payload(job))
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
     return success_response(JobIndexResult.model_validate(result))
@@ -73,9 +173,15 @@ def index_job(
 )
 def index_all_approved_jobs(
     _reviewer: User = Depends(require_roles("reviewer")),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[BatchIndexResult]:
+    jobs = db.scalars(
+        select(JobPosting)
+        .where(JobPosting.status == "approved")
+        .order_by(JobPosting.id)
+    ).all()
     try:
-        result = index_approved_jobs(JOB_STORE.values())
+        result = index_approved_jobs(job_to_vector_payload(job) for job in jobs)
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
     return success_response(BatchIndexResult.model_validate(result))

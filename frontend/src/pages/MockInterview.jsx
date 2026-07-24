@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { sendMessage, startInterview } from '../api/client';
+import { endInterview, sendMessage, startInterview } from '../api/client';
 
 export default function MockInterview() {
   const location = useLocation();
@@ -13,6 +13,7 @@ export default function MockInterview() {
   const [feedback, setFeedback] = useState([]);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [finalReport, setFinalReport] = useState(null);
   const [error, setError] = useState('');
   const messagesEnd = useRef(null);
 
@@ -41,7 +42,7 @@ export default function MockInterview() {
       setSessionId(result.session_id);
       setMessages([{
         role: 'interviewer',
-        content: result.question,
+        content: `第 1/${result.total_questions || 8} 题：${result.question}`,
         timestamp: new Date().toISOString(),
       }]);
     } catch (requestError) {
@@ -60,15 +61,37 @@ export default function MockInterview() {
     setError('');
     try {
       const result = await sendMessage(sessionId, answer);
-      setScores(current => [...current, result.score]);
-      setFeedback(current => [...current, result.feedback]);
+      if (typeof result.score === 'number') {
+        setScores(current => [...current, result.score]);
+      }
+      if (result.feedback) {
+        setFeedback(current => [...current, result.feedback]);
+      }
+      const responseText = result.is_followup
+        ? `追问：${result.followup_question || result.next_question}`
+        : `${result.feedback || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n本轮题目已完成，可以点击“结束面试”生成报告。'}`;
       setMessages(current => [...current, {
         role: 'interviewer',
-        content: `${result.feedback}\n\n${result.next_question}`,
+        content: responseText.trim(),
         timestamp: new Date().toISOString(),
       }]);
     } catch (requestError) {
       setError(requestError.message || '回答提交失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleEnd = async () => {
+    if (!sessionId || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const report = await endInterview(sessionId);
+      setFinalReport(report);
+      setEnded(true);
+    } catch (requestError) {
+      setError(requestError.message || '面试报告生成失败');
     } finally {
       setBusy(false);
     }
@@ -108,8 +131,8 @@ export default function MockInterview() {
           <span className="text-muted">{location.state?.jobInfo?.company || '目标岗位'} - {targetPosition || '综合面试'}</span>
         </div>
         {!ended && (
-          <button className="btn btn-danger" onClick={() => setEnded(true)} disabled={busy}>
-            结束面试
+          <button className="btn btn-danger" onClick={handleEnd} disabled={busy}>
+            {busy ? '生成报告中...' : '结束面试'}
           </button>
         )}
       </div>
@@ -148,11 +171,30 @@ export default function MockInterview() {
       {ended && (
         <div className="card interview-result">
           <h3>本次面试小结</h3>
-          <p><strong>平均得分：</strong>{averageScore ?? '尚未完成作答'}</p>
+          <p><strong>平均得分：</strong>{finalReport?.overall_score ?? averageScore ?? '尚未完成作答'}</p>
+          {finalReport?.summary && <p>{finalReport.summary}</p>}
           {feedback.length > 0 && (
             <ul>{feedback.map((item, index) => <li key={index}>{item}</li>)}</ul>
           )}
-          <p className="text-muted">面试记录持久化与完整报告将在后续模块接入。</p>
+          {finalReport?.star_suggestions?.length > 0 && (
+            <>
+              <h4>STAR 改写建议</h4>
+              <ul>
+                {finalReport.star_suggestions.map((item, index) => (
+                  <li key={index}>
+                    <strong>{item.question}</strong>
+                    <p style={{ whiteSpace: 'pre-wrap' }}>{item.star_rewrite}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {finalReport?.practice_plan && (
+            <>
+              <h4>下一步练习计划</h4>
+              <p style={{ whiteSpace: 'pre-wrap' }}>{finalReport.practice_plan}</p>
+            </>
+          )}
         </div>
       )}
     </div>

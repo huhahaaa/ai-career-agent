@@ -17,6 +17,7 @@ htmlcov/
 .env
 backend/.env
 frontend/.env
+.runtime-logs/
 
 # Node
 frontend/node_modules/
@@ -49,3 +50,4 @@ data/audit_samples/*
 !data/audit_samples/*.jsonl
 data/vector_store/
 backend/data/vector_store/
+backend/data/uploads/

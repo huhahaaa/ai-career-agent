@@ -1,6 +1,14 @@
 import os
 from typing import List
 
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - optional local convenience dependency
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv()
+
 
 class Settings:
     def __init__(self) -> None:
@@ -26,6 +34,8 @@ class Settings:
         )
         self.llm_provider = os.getenv("LLM_PROVIDER", "mock")
         self.llm_api_key = os.getenv("LLM_API_KEY", "")
+        self.llm_base_url = os.getenv("LLM_BASE_URL", "https://api.deepseek.com")
+        self.llm_model = os.getenv("LLM_MODEL", "deepseek-chat")
 
     @property
     def cors_origins(self) -> List[str]:

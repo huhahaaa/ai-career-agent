@@ -56,15 +56,30 @@ Authorization: Bearer <access_token>
 | `PATCH` | `/jobs/{job_id}/audit` | 审核岗位，仅 `reviewer` |
 | `GET` | `/jobs/approved` | 已审核通过岗位，需登录 |
 
-当前岗位接口仍使用内存存储，供数据采集成员在其分支替换为 SQLAlchemy 持久化实现。
+岗位导入、列表、审核和已通过查询已接入 SQLAlchemy 持久化。岗位信息保存到
+`job_postings` 表，审核操作会写入 `job_review_records` 表。
 
 ## 简历与匹配
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| `GET` | `/resumes` | 当前用户简历版本列表，需登录 |
+| `POST` | `/resumes/upload` | 上传简历文件，需登录 |
+| `GET` | `/resumes/{resume_id}` | 简历详情和版本内容，需登录 |
+| `DELETE` | `/resumes/{resume_id}` | 删除简历，需登录 |
 | `POST` | `/resumes/audit` | 简历审核，需登录 |
 | `POST` | `/matching/run` | 岗位匹配，需登录 |
+| `GET` | `/matching/history` | 当前用户岗位匹配历史，需登录 |
 | `GET` | `/matching/skill-taxonomy` | 技能词表，需登录 |
+
+简历上传目前完成文件保存、简历主表和版本表落库。PDF/DOC/DOCX 深度解析
+仍属于后续简历解析模块；TXT/MD 可直接保存文本内容。
+
+`/resumes/audit` 会保存审核报告到 `resume_audit_reports` 表。请求中可选传入
+`resume_id`，用于把审核报告关联到已上传简历版本。
+
+`/matching/run` 会保存可关联到数据库岗位的匹配结果。用户直接粘贴简历时，
+后端会自动保存一份简历快照和版本记录，便于后续查看匹配历史。
 
 ## 面试 Agent
 
@@ -72,6 +87,11 @@ Authorization: Bearer <access_token>
 | --- | --- | --- |
 | `POST` | `/interviews/start` | 开始模拟面试，需登录 |
 | `POST` | `/interviews/{session_id}/answer` | 提交回答并获得反馈，需登录 |
+| `GET` | `/interviews/history` | 当前用户面试记录，需登录 |
+| `GET` | `/interviews/{session_id}/report` | 面试报告详情，需登录 |
+
+当前面试接口会保存简历快照、面试会话、用户回答、基础得分、反馈和下一轮问题。
+完整 8 题题库、STAR Rubric 和多 Agent 面试官仍属于后续 Agent 模块。
 
 ## 权限错误码
 
