@@ -17,6 +17,7 @@ htmlcov/
 .env
 backend/.env
 frontend/.env
+.runtime-logs/
 
 # Node
 frontend/node_modules/

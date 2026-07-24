@@ -56,7 +56,8 @@ Authorization: Bearer <access_token>
 | `PATCH` | `/jobs/{job_id}/audit` | 审核岗位，仅 `reviewer` |
 | `GET` | `/jobs/approved` | 已审核通过岗位，需登录 |
 
-当前岗位接口仍使用内存存储，供数据采集成员在其分支替换为 SQLAlchemy 持久化实现。
+岗位导入、列表、审核和已通过查询已接入 SQLAlchemy 持久化。岗位信息保存到
+`job_postings` 表，审核操作会写入 `job_review_records` 表。
 
 ## 简历与匹配
 

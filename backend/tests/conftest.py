@@ -4,7 +4,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.v1.endpoints.jobs import JOB_STORE
 from app.db.init_db import init_db
 from app.db.session import Base, get_db
 from app.main import create_app
@@ -40,8 +39,6 @@ def client(session_factory):
             db.close()
 
     application.dependency_overrides[get_db] = override_get_db
-    JOB_STORE.clear()
     with TestClient(application) as test_client:
         yield test_client
-    JOB_STORE.clear()
     application.dependency_overrides.clear()

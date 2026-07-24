@@ -1,10 +1,14 @@
 from typing import List
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_roles
-from app.api.v1.endpoints.jobs import JOB_STORE
+from app.api.v1.endpoints.jobs import job_to_vector_payload
 from app.core.exceptions import AppException
+from app.db.session import get_db
+from app.models.job import JobPosting
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.matching import (
@@ -54,14 +58,15 @@ def run_matching(
 def index_job(
     job_id: int,
     _reviewer: User = Depends(require_roles("reviewer")),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[JobIndexResult]:
-    job = JOB_STORE.get(job_id)
+    job = db.get(JobPosting, job_id)
     if job is None:
         raise AppException(404, 40401, "job not found")
-    if job.get("status") != "approved":
+    if job.status != "approved":
         raise AppException(409, 40903, "only approved jobs can be indexed")
     try:
-        result = index_approved_job(job)
+        result = index_approved_job(job_to_vector_payload(job))
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
     return success_response(JobIndexResult.model_validate(result))
@@ -73,9 +78,15 @@ def index_job(
 )
 def index_all_approved_jobs(
     _reviewer: User = Depends(require_roles("reviewer")),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[BatchIndexResult]:
+    jobs = db.scalars(
+        select(JobPosting)
+        .where(JobPosting.status == "approved")
+        .order_by(JobPosting.id)
+    ).all()
     try:
-        result = index_approved_jobs(JOB_STORE.values())
+        result = index_approved_jobs(job_to_vector_payload(job) for job in jobs)
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
     return success_response(BatchIndexResult.model_validate(result))
