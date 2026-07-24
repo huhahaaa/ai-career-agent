@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link, Navigate } from 'react-router-dom';
+import { useNavigate, Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { login as apiLogin } from '../api/client';
 
@@ -9,6 +9,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isAuthenticated } = useAuth();
 
   // 已登录用户直接跳转到首页
@@ -42,6 +43,7 @@ export default function Login() {
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
           <h2>用户登录</h2>
+          {location.state?.message && <div className="alert alert-success">{location.state.message}</div>}
           {error && <div className="alert alert-error">{error}</div>}
           <div className="form-group">
             <label>用户名</label>
@@ -68,7 +70,7 @@ export default function Login() {
           <p className="auth-footer">
             还没有账号？<Link to="/register">立即注册</Link>
           </p>
-          <p className="auth-hint">演示账号: demo / demo123</p>
+          {import.meta.env.VITE_USE_MOCK === 'true' && <p className="auth-hint">演示账号: demo / demo123</p>}
         </form>
       </div>
     </div>

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { register as apiRegister } from '../api/client';
 
 export default function Register() {
@@ -8,7 +7,6 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const update = (field) => (e) => setForm({ ...form, [field]: e.target.value });
 
@@ -23,15 +21,14 @@ export default function Register() {
       setError('两次输入的密码不一致');
       return;
     }
-    if (form.password.length < 6) {
-      setError('密码长度不能少于6位');
+    if (form.password.length < 8) {
+      setError('密码长度不能少于8位');
       return;
     }
     setLoading(true);
     try {
-      const data = await apiRegister({ username: form.username, email: form.email, password: form.password });
-      login(data.user || { username: form.username }, data.access_token);
-      navigate('/');
+      await apiRegister({ username: form.username, email: form.email, password: form.password });
+      navigate('/login', { replace: true, state: { message: '注册成功，请登录' } });
     } catch (err) {
       setError(err.message || '注册失败，请重试');
     } finally {
@@ -59,7 +56,7 @@ export default function Register() {
           </div>
           <div className="form-group">
             <label>密码 *</label>
-            <input type="password" value={form.password} onChange={update('password')} placeholder="至少6位密码" />
+            <input type="password" value={form.password} onChange={update('password')} placeholder="至少8位密码" />
           </div>
           <div className="form-group">
             <label>确认密码 *</label>
