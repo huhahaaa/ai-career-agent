@@ -40,4 +40,5 @@ data/processed/*
 !data/processed/.gitkeep
 data/audit_samples/*
 !data/audit_samples/.gitkeep
-
+data/vector_store/
+backend/data/vector_store/
