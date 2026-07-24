@@ -1,7 +1,7 @@
 from typing import Callable, Optional, Tuple
 
 from fastapi import Depends, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppException
@@ -10,16 +10,18 @@ from app.db.session import get_db
 from app.models.user import User
 
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/login",
+bearer_scheme = HTTPBearer(
+    scheme_name="BearerAuth",
+    description="Paste the JWT access token returned by /api/v1/auth/login",
     auto_error=False,
 )
 
 
 def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    token = credentials.credentials if credentials else None
     if not token:
         raise AppException(
             status_code=status.HTTP_401_UNAUTHORIZED,

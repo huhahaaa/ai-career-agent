@@ -107,3 +107,11 @@ def test_invalid_registration_uses_validation_envelope(client):
     assert body["code"] == 42200
     assert body["message"] == "request validation failed"
     assert len(body["data"]["errors"]) == 3
+
+
+def test_openapi_uses_bearer_token_authorization(client):
+    response = client.get("/openapi.json")
+
+    security_scheme = response.json()["components"]["securitySchemes"]["BearerAuth"]
+    assert security_scheme["type"] == "http"
+    assert security_scheme["scheme"] == "bearer"
