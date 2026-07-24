@@ -63,10 +63,17 @@ Authorization: Bearer <access_token>
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| `GET` | `/resumes` | 当前用户简历版本列表，需登录 |
+| `POST` | `/resumes/upload` | 上传简历文件，需登录 |
+| `GET` | `/resumes/{resume_id}` | 简历详情和版本内容，需登录 |
+| `DELETE` | `/resumes/{resume_id}` | 删除简历，需登录 |
 | `POST` | `/resumes/audit` | 简历审核，需登录 |
 | `POST` | `/matching/run` | 岗位匹配，需登录 |
 | `GET` | `/matching/history` | 当前用户岗位匹配历史，需登录 |
 | `GET` | `/matching/skill-taxonomy` | 技能词表，需登录 |
+
+简历上传目前完成文件保存、简历主表和版本表落库。PDF/DOC/DOCX 深度解析
+仍属于后续简历解析模块；TXT/MD 可直接保存文本内容。
 
 `/matching/run` 会保存可关联到数据库岗位的匹配结果。用户直接粘贴简历时，
 后端会自动保存一份简历快照和版本记录，便于后续查看匹配历史。

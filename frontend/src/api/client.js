@@ -159,19 +159,22 @@ export function getDashboard() {
 }
 
 export function getResumes() {
-  return USE_MOCK ? Promise.resolve([]) : unavailable('简历列表');
+  return mockFallback(() => request('/resumes'), () => []);
 }
 
-export function uploadResume() {
-  return USE_MOCK ? Promise.resolve({ status: 'processing' }) : unavailable('简历文件上传');
+export function uploadResume(formData) {
+  return mockFallback(
+    () => request('/resumes/upload', { method: 'POST', body: formData }),
+    () => ({ status: 'pending' }),
+  );
 }
 
-export function deleteResume() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('简历删除');
+export function deleteResume(id) {
+  return mockFallback(() => request(`/resumes/${id}`, { method: 'DELETE' }), () => null);
 }
 
-export function getResumeDetail() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('简历详情');
+export function getResumeDetail(id) {
+  return mockFallback(() => request(`/resumes/${id}`), () => null);
 }
 
 export function getJobs(params = {}) {
