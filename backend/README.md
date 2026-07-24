@@ -15,6 +15,18 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+Install the optional vector matching dependencies before building or querying
+the Chroma index:
+
+```bash
+pip install -r requirements-vector.txt
+python scripts/index_jobs.py ../data/processed/jobs_clean.jsonl
+```
+
+The embedding model and Chroma client are loaded only on the first indexing or
+matching request, so authentication and other API modules can start without the
+model being downloaded.
+
 The application creates `career_agent.db` and all core tables on first startup.
 Set a private `SECRET_KEY` before sharing or deploying the service; the available
 environment variables are listed in the repository `.env.example` file.

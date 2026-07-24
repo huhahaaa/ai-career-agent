@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getJobs, updateJobStatus } from '../api/client';
+import { getJobs, rebuildApprovedJobIndex, updateJobStatus } from '../api/client';
 
 export default function JobReview() {
   const [jobs, setJobs] = useState([]);
@@ -25,12 +25,25 @@ export default function JobReview() {
     }
   };
 
+  const handleReindex = async () => {
+    try {
+      const result = await rebuildApprovedJobIndex();
+      setMsg({ type: 'success', text: `向量索引已更新，共写入 ${result.indexed_count} 个岗位` });
+    } catch (error) {
+      setMsg({ type: 'error', text: error.message || '向量索引更新失败' });
+    }
+  };
+
   if (loading) return <div className="loading">加载中...</div>;
 
   return (
     <div className="page">
       <h2>🔍 岗位审核管理</h2>
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+
+      <div className="toolbar">
+        <button className="btn btn-outline" onClick={handleReindex}>更新已审核岗位索引</button>
+      </div>
 
       <div className="card">
         <h3>待审核岗位 ({jobs.length})</h3>
