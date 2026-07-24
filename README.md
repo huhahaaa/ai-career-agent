@@ -10,7 +10,7 @@ AI Career Agent 是一个面向课程综合项目的求职辅助平台，覆盖�
 
 ## 技术框架
 
-- 后端：FastAPI
+- 后端：Python 3.11 + FastAPI
 - 前端：Vite + React
 - 数据库：SQLite 起步，后续可切换 MySQL/PostgreSQL
 - 知识库/向量检索：先预留 `services/vector_store.py`，后续接 Chroma、FAISS 或 Milvus

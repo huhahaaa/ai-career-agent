@@ -2,6 +2,10 @@
 
 FastAPI backend for authentication, job data auditing, resume review, matching, and mock interview workflows.
 
+## Prerequisite
+
+Use Python 3.11 for local development and testing.
+
 ## Run
 
 ```bash
