@@ -7,6 +7,14 @@ class Settings:
         self.app_name = os.getenv("APP_NAME", "AI Career Agent")
         self.environment = os.getenv("ENVIRONMENT", "development")
         self.database_url = os.getenv("DATABASE_URL", "sqlite:///./career_agent.db")
+        self.secret_key = os.getenv(
+            "SECRET_KEY",
+            "development-only-change-this-secret-key",
+        )
+        self.jwt_algorithm = os.getenv("JWT_ALGORITHM", "HS256")
+        self.access_token_expire_minutes = int(
+            os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120")
+        )
         self.vector_store_path = os.getenv("VECTOR_STORE_PATH", "./data/vector_store")
         self.llm_provider = os.getenv("LLM_PROVIDER", "mock")
         self.llm_api_key = os.getenv("LLM_API_KEY", "")
@@ -18,4 +26,3 @@ class Settings:
 
 
 settings = Settings()
-
