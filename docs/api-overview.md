@@ -65,7 +65,11 @@ Authorization: Bearer <access_token>
 | --- | --- | --- |
 | `POST` | `/resumes/audit` | 简历审核，需登录 |
 | `POST` | `/matching/run` | 岗位匹配，需登录 |
+| `GET` | `/matching/history` | 当前用户岗位匹配历史，需登录 |
 | `GET` | `/matching/skill-taxonomy` | 技能词表，需登录 |
+
+`/matching/run` 会保存可关联到数据库岗位的匹配结果。用户直接粘贴简历时，
+后端会自动保存一份简历快照和版本记录，便于后续查看匹配历史。
 
 ## 面试 Agent
 
