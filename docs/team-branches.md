@@ -10,7 +10,7 @@
 
 | 角色 | 分支名 | 主要负责 |
 | --- | --- | --- |
-| 组长 | `leader/project-scaffold` | 项目骨架、后端基础、数据库、集成、发布 |
+| 组长 | `hechang/project-scaffold` | 项目骨架、后端基础、数据库、集成、发布 |
 | 成员 A | `feature/job-data-audit` | 岗位采集、清洗、去重、审核 |
 | 成员 B | `feature/vector-matching` | 知识库、Embedding、向量检索、岗位匹配 |
 | 成员 C | `feature/resume-interview-agent` | 简历审核、面试 Agent、评分报告 |
@@ -36,4 +36,3 @@ docs(report): add data audit workflow section
 - 每完成一个小功能就提交一次，不要把一整天内容压成一条。
 - 合并时不要 squash merge，否则个人提交记录会被压缩。
 - 每次阶段性合并后打标签，例如 `v0.1.0-scaffold`、`v0.2.0-data-audit`、`v1.0.0-final`。
-
