@@ -58,6 +58,7 @@ class VectorStore:
     def _create_collection(self):
         try:
             import chromadb
+            from chromadb.config import Settings as ChromaSettings
             from chromadb.utils.embedding_functions import (
                 SentenceTransformerEmbeddingFunction,
             )
@@ -70,7 +71,10 @@ class VectorStore:
         try:
             store_path = Path(settings.vector_store_path).expanduser().resolve()
             store_path.mkdir(parents=True, exist_ok=True)
-            client = chromadb.PersistentClient(path=str(store_path))
+            client = chromadb.PersistentClient(
+                path=str(store_path),
+                settings=ChromaSettings(anonymized_telemetry=False),
+            )
             embedding_function = SentenceTransformerEmbeddingFunction(
                 model_name=settings.vector_model_name,
             )
