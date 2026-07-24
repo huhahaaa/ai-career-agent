@@ -1,11 +1,11 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from uuid import uuid4
 
 
 def start_interview(
     resume_text: str,
     target_position: str = "",
-    target_job_id: Optional[int] = None,
+    target_job_id: Optional[Union[int, str]] = None,
 ) -> Dict:
     tools_used = ["resume_analyzer", "job_matcher", "question_generator"]
     position = target_position or "目标岗位"

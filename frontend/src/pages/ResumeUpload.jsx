@@ -12,7 +12,10 @@ export default function ResumeUpload() {
   const load = () => {
     getResumes()
       .then(setResumes)
-      .catch(() => setMsg({ type: 'error', text: '加载失败' }))
+      .catch(error => setMsg({
+        type: error.code === 50100 ? 'info' : 'error',
+        text: error.message || '简历列表加载失败',
+      }))
       .finally(() => setLoading(false));
   };
 
@@ -33,8 +36,11 @@ export default function ResumeUpload() {
       await uploadResume(fd);
       setMsg({ type: 'success', text: '上传成功，正在解析中...' });
       load();
-    } catch {
-      setMsg({ type: 'error', text: '上传失败' });
+    } catch (error) {
+      setMsg({
+        type: error.code === 50100 ? 'info' : 'error',
+        text: error.message || '简历上传失败',
+      });
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -47,8 +53,11 @@ export default function ResumeUpload() {
       await deleteResume(id);
       setMsg({ type: 'success', text: '删除成功' });
       load();
-    } catch {
-      setMsg({ type: 'error', text: '删除失败' });
+    } catch (error) {
+      setMsg({
+        type: error.code === 50100 ? 'info' : 'error',
+        text: error.message || '简历删除失败',
+      });
     }
   };
 

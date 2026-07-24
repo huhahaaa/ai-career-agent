@@ -7,17 +7,20 @@ const COLORS = ['#6366f1', '#06b6d4', '#f59e0b', '#ef4444', '#22c55e', '#8b5cf6'
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     getDashboard()
       .then(setData)
-      .catch(e => setError(e.message))
+      .catch(setError)
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="loading">加载中...</div>;
-  if (error) return <div className="alert alert-error">{error}</div>;
+  if (error) {
+    const type = error.code === 50100 ? 'info' : 'error';
+    return <div className={`alert alert-${type}`}>{error.message || '数据看板加载失败'}</div>;
+  }
   if (!data) return <div className="empty">暂无数据</div>;
 
   const stats = [
