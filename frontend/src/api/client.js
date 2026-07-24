@@ -278,11 +278,11 @@ export function endInterview() {
 }
 
 export function getInterviewHistory() {
-  return USE_MOCK ? Promise.resolve([]) : unavailable('面试历史');
+  return mockFallback(() => request('/interviews/history'), () => []);
 }
 
-export function getInterviewReport() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('面试报告');
+export function getInterviewReport(id) {
+  return mockFallback(() => request(`/interviews/${id}/report`), () => null);
 }
 
 export function getCityDistribution() {

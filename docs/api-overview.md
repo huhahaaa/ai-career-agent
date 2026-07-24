@@ -77,6 +77,11 @@ Authorization: Bearer <access_token>
 | --- | --- | --- |
 | `POST` | `/interviews/start` | 开始模拟面试，需登录 |
 | `POST` | `/interviews/{session_id}/answer` | 提交回答并获得反馈，需登录 |
+| `GET` | `/interviews/history` | 当前用户面试记录，需登录 |
+| `GET` | `/interviews/{session_id}/report` | 面试报告详情，需登录 |
+
+当前面试接口会保存简历快照、面试会话、用户回答、基础得分、反馈和下一轮问题。
+完整 8 题题库、STAR Rubric 和多 Agent 面试官仍属于后续 Agent 模块。
 
 ## 权限错误码
 
