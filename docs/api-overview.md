@@ -75,6 +75,9 @@ Authorization: Bearer <access_token>
 简历上传目前完成文件保存、简历主表和版本表落库。PDF/DOC/DOCX 深度解析
 仍属于后续简历解析模块；TXT/MD 可直接保存文本内容。
 
+`/resumes/audit` 会保存审核报告到 `resume_audit_reports` 表。请求中可选传入
+`resume_id`，用于把审核报告关联到已上传简历版本。
+
 `/matching/run` 会保存可关联到数据库岗位的匹配结果。用户直接粘贴简历时，
 后端会自动保存一份简历快照和版本记录，便于后续查看匹配历史。
 

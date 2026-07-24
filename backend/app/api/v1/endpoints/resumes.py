@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import List
 
@@ -149,7 +150,24 @@ def delete_resume(
 @router.post("/audit", response_model=ApiResponse[ResumeAuditResult])
 def audit_resume(
     payload: ResumeAuditRequest,
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ) -> ApiResponse[ResumeAuditResult]:
+    resume_id = payload.resume_id
+    if resume_id is not None:
+        resume = db.get(Resume, resume_id)
+        if resume is None or resume.user_id != current_user.id:
+            raise AppException(404, 40403, "resume not found")
+
     result = audit_resume_text(payload.resume_text, payload.target_position)
+    db.add(
+        ResumeAuditReport(
+            user_id=current_user.id,
+            resume_id=resume_id,
+            score=result["score"],
+            risk_flags=json.dumps(result["risk_flags"], ensure_ascii=False),
+            suggestions=json.dumps(result["suggestions"], ensure_ascii=False),
+        )
+    )
+    db.commit()
     return success_response(ResumeAuditResult.model_validate(result))

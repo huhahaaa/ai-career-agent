@@ -1,3 +1,8 @@
+from sqlalchemy import select
+
+from app.models.resume import ResumeAuditReport
+
+
 def register_and_login(client):
     client.post(
         "/api/v1/auth/register",
@@ -52,3 +57,51 @@ def test_resume_upload_rejects_unsupported_file_type(client):
 
     assert response.status_code == 422
     assert response.json()["code"] == 42202
+
+
+def test_resume_text_audit_is_persisted(client, session_factory):
+    headers = register_and_login(client)
+
+    response = client.post(
+        "/api/v1/resumes/audit",
+        headers=headers,
+        json={
+            "resume_text": "我熟悉 Python，了解数据库，参与过后端接口开发。",
+            "target_position": "Python 后端实习生",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["score"] == 75
+    with session_factory() as db:
+        reports = db.scalars(select(ResumeAuditReport)).all()
+        assert len(reports) == 1
+        assert reports[0].resume_id is None
+
+
+def test_resume_audit_can_attach_to_uploaded_resume(client, session_factory):
+    headers = register_and_login(client)
+    upload = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={"file": ("resume.txt", b"Python FastAPI SQL project", "text/plain")},
+    )
+    resume_id = upload.json()["data"]["id"]
+
+    audit = client.post(
+        "/api/v1/resumes/audit",
+        headers=headers,
+        json={
+            "resume_id": resume_id,
+            "resume_text": "我熟悉 Python，了解 FastAPI，具有一定的数据库经验。",
+            "target_position": "Python 后端实习生",
+        },
+    )
+    list_response = client.get("/api/v1/resumes", headers=headers)
+
+    assert audit.status_code == 200
+    assert list_response.json()["data"][0]["status"] == "approved"
+    with session_factory() as db:
+        reports = db.scalars(select(ResumeAuditReport)).all()
+        assert len(reports) == 1
+        assert reports[0].resume_id == resume_id
