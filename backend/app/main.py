@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.exception_handlers import register_exception_handlers
 from app.db.init_db import init_db
 
 
@@ -32,6 +33,7 @@ def create_app(initialize_database: bool = True) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    register_exception_handlers(application)
 
     @application.get("/health", tags=["system"])
     def health_check():

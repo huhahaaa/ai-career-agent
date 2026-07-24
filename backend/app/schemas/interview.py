@@ -1,11 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 
 class InterviewStartRequest(BaseModel):
     resume_text: str
-    target_job_id: str = ""
+    target_job_id: Optional[int] = None
     target_position: str = ""
 
 
@@ -23,4 +23,3 @@ class InterviewAnswerResult(BaseModel):
     score: int
     feedback: str
     next_question: str
-

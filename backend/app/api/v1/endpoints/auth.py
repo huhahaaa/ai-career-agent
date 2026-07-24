@@ -1,20 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
+from app.core.exceptions import AppException
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserOut
-from app.schemas.common import MessageResponse
+from app.schemas.common import ApiResponse, success_response
 
 router = APIRouter()
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
+@router.post(
+    "/register",
+    response_model=ApiResponse[UserOut],
+    status_code=status.HTTP_201_CREATED,
+)
+def register(
+    payload: RegisterRequest,
+    db: Session = Depends(get_db),
+) -> ApiResponse[UserOut]:
     existing_user = db.scalar(
         select(User).where(
             or_(
@@ -27,17 +35,19 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
         field_name = (
             "username" if existing_user.username == payload.username else "email"
         )
-        raise HTTPException(
+        raise AppException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="%s already exists" % field_name,
+            code=40901 if field_name == "username" else 40902,
+            message="%s already exists" % field_name,
         )
 
     try:
         hashed_password = hash_password(payload.password)
     except ValueError as exc:
-        raise HTTPException(
+        raise AppException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
+            code=42201,
+            message=str(exc),
         )
 
     user = User(
@@ -49,40 +59,53 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    return success_response(
+        UserOut.model_validate(user),
+        message="registered successfully",
+    )
 
 
-@router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@router.post("/login", response_model=ApiResponse[TokenResponse])
+def login(
+    payload: LoginRequest,
+    db: Session = Depends(get_db),
+) -> ApiResponse[TokenResponse]:
     user = db.scalar(select(User).where(User.username == payload.username))
     if user is None or not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(
+        raise AppException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="incorrect username or password",
+            code=40101,
+            message="incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     if not user.is_active:
-        raise HTTPException(
+        raise AppException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="user account is inactive",
+            code=40302,
+            message="user account is inactive",
         )
 
     access_token = create_access_token(
         subject=user.id,
         extra_claims={"role": user.role},
     )
-    return TokenResponse(
-        access_token=access_token,
-        expires_in=settings.access_token_expire_minutes * 60,
-        user=UserOut.model_validate(user),
+    return success_response(
+        TokenResponse(
+            access_token=access_token,
+            expires_in=settings.access_token_expire_minutes * 60,
+            user=UserOut.model_validate(user),
+        ),
+        message="logged in successfully",
     )
 
 
-@router.post("/logout", response_model=MessageResponse)
-def logout(_current_user: User = Depends(get_current_user)) -> MessageResponse:
-    return MessageResponse(message="logged out")
+@router.post("/logout", response_model=ApiResponse[None])
+def logout(_current_user: User = Depends(get_current_user)) -> ApiResponse[None]:
+    return success_response(message="logged out")
 
 
-@router.get("/me", response_model=UserOut)
-def read_current_user(current_user: User = Depends(get_current_user)) -> User:
-    return current_user
+@router.get("/me", response_model=ApiResponse[UserOut])
+def read_current_user(
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[UserOut]:
+    return success_response(UserOut.model_validate(current_user))
