@@ -1,10 +1,10 @@
 # backend/app/services/vector_store.py
 import os
+
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
 from sentence_transformers import SentenceTransformer
 import chromadb
-from typing import Dict, List
 
 # 初始化数据库和模型
 persist_directory = "./chroma_db"
@@ -18,18 +18,18 @@ model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 print("✅ ChromaDB 核心模块加载成功")
 
 
-def upsert_job_embedding(job: Dict) -> Dict:
-    """存入单个岗位"""
+def upsert_job_embedding(job: dict) -> dict:
+    """存入单个岗位（兼容项目原有接口）"""
     job_id = job.get("id")
     title = job.get("title", "")
     company = job.get("company", "")
     description = job.get("description", "")
     requirements = job.get("requirements", "")
     source_link = job.get("source_link", "")
-    
+
     text_to_embed = f"{title}\n{description}\n{requirements}"
     embedding = model.encode(text_to_embed).tolist()
-    
+
     collection.upsert(
         ids=[str(job_id)],
         embeddings=[embedding],
@@ -44,15 +44,15 @@ def upsert_job_embedding(job: Dict) -> Dict:
     return {"job_id": job_id, "vector_status": "success"}
 
 
-def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:
-    """搜索相似岗位"""
+def search_similar_jobs(query: str, top_k: int = 5) -> list[dict]:
+    """搜索相似岗位（兼容项目原有接口名）"""
     query_embedding = model.encode(query).tolist()
     results = collection.query(
         query_embeddings=[query_embedding],
         n_results=top_k,
         include=["metadatas", "documents", "distances"]
     )
-    
+
     matched = []
     if results['ids'] and len(results['ids'][0]) > 0:
         for i in range(len(results['ids'][0])):
@@ -65,3 +65,8 @@ def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:
                 "reason": results['documents'][0][i][:150] + "..."
             })
     return matched
+
+
+# 为了兼容 matching.py 的导入，添加别名
+search_jobs = search_similar_jobs
+add_job = upsert_job_embedding

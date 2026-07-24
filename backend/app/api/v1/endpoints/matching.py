@@ -1,9 +1,9 @@
 from typing import List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.services.matching import match_resume_to_jobs
+from app.services.vector_store import search_similar_jobs
 
 router = APIRouter()
 
@@ -16,16 +16,13 @@ class MatchRequest(BaseModel):
 
 @router.post("/run")
 def run_matching(payload: MatchRequest):
-    return {
-        "matches": match_resume_to_jobs(
-            payload.resume_text,
-            payload.target_position,
-            payload.top_k,
-        )
-    }
+    if not payload.resume_text.strip():
+        raise HTTPException(status_code=400, detail="简历文本不能为空")
+
+    results = search_similar_jobs(payload.resume_text, top_k=payload.top_k)
+    return {"matches": results}
 
 
 @router.get("/skill-taxonomy", response_model=List[str])
 def skill_taxonomy():
     return ["Python", "FastAPI", "React", "SQL", "LLM", "RAG", "数据清洗", "岗位审核"]
-
