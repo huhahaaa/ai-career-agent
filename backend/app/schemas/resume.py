@@ -1,10 +1,10 @@
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ResumeAuditRequest(BaseModel):
-    resume_text: str
+    resume_text: str = Field(..., min_length=10)
     target_position: str = ""
     resume_id: Optional[int] = None
 
@@ -14,3 +14,4 @@ class ResumeAuditResult(BaseModel):
     risk_flags: List[str]
     suggestions: List[str]
     missing_keywords: List[str]
+    risk_level: str = "低"

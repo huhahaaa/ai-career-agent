@@ -276,8 +276,20 @@ export function sendMessage(interviewId, answer) {
   );
 }
 
-export function endInterview() {
-  return USE_MOCK ? Promise.resolve(null) : unavailable('面试结束与报告保存');
+export function endInterview(interviewId) {
+  return mockFallback(
+    () => request(`/interviews/${interviewId}/finish`, { method: 'POST' }),
+    () => ({
+      session_id: interviewId,
+      overall_score: 72,
+      dimension_averages: {},
+      total_questions_answered: 1,
+      details: [],
+      star_suggestions: [],
+      practice_plan: '继续补充 STAR 案例、技术细节和量化结果。',
+      summary: '本次面试已生成模拟报告。',
+    }),
+  );
 }
 
 export function getInterviewHistory() {

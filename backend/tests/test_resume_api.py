@@ -72,7 +72,9 @@ def test_resume_text_audit_is_persisted(client, session_factory):
     )
 
     assert response.status_code == 200
-    assert response.json()["data"]["score"] == 75
+    assert response.json()["data"]["score"] >= 60
+    assert response.json()["data"]["risk_level"] in {"低", "中", "高"}
+    assert response.json()["data"]["risk_flags"]
     with session_factory() as db:
         reports = db.scalars(select(ResumeAuditReport)).all()
         assert len(reports) == 1
