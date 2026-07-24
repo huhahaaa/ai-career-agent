@@ -8,7 +8,7 @@ export default function JobReview() {
 
   const load = () => {
     getJobs({ status: 'pending' })
-      .then(data => setJobs(Array.isArray(data) ? data : data.filter(j => j.status === 'pending')))
+      .then(data => setJobs(Array.isArray(data) ? data : []))
       .catch(() => setMsg({ type: 'error', text: '加载失败' }))
       .finally(() => setLoading(false));
   };
@@ -18,7 +18,7 @@ export default function JobReview() {
   const handleAction = async (id, status) => {
     try {
       await updateJobStatus(id, status);
-      setMsg({ type: 'success', text: status === 'published' ? '已通过审核' : '已驳回' });
+      setMsg({ type: 'success', text: status === 'approved' ? '已通过审核' : '已驳回' });
       load();
     } catch {
       setMsg({ type: 'error', text: '操作失败' });
@@ -43,24 +43,20 @@ export default function JobReview() {
                 <div className="review-card-header">
                   <div>
                     <h4>{j.title}</h4>
-                    <span className="text-muted">{j.company} | {j.city} | {j.experience || '经验不限'}</span>
+                    <span className="text-muted">{j.company} | {j.location || '地点未标注'} | {j.publish_time || '时间未标注'}</span>
                   </div>
                   <span className="tag tag-warning">待审核</span>
                 </div>
                 <div className="review-card-body">
-                  <div className="review-info">
-                    <span>💰 {j.salary_min / 1000}k - {j.salary_max / 1000}k</span>
-                    <span>🎓 {j.education || '本科'}</span>
-                  </div>
-                  {j.skills_required?.length > 0 && (
+                  {j.skills?.length > 0 && (
                     <div className="tag-group">
-                      {j.skills_required.map(s => <span key={s} className="tag">{s}</span>)}
+                      {j.skills.map(s => <span key={s} className="tag">{s}</span>)}
                     </div>
                   )}
-                  {j.description && <p className="info-desc">{j.description}</p>}
+                  {j.source_link && <a href={j.source_link} target="_blank" rel="noreferrer">查看岗位来源</a>}
                 </div>
                 <div className="review-card-actions">
-                  <button className="btn btn-sm btn-success" onClick={() => handleAction(j.id, 'published')}>✅ 通过</button>
+                  <button className="btn btn-sm btn-success" onClick={() => handleAction(j.id, 'approved')}>✅ 通过</button>
                   <button className="btn btn-sm btn-danger" onClick={() => handleAction(j.id, 'rejected')}>❌ 驳回</button>
                 </div>
               </div>

@@ -8,12 +8,13 @@ export default function InterviewHistory() {
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
     getInterviewHistory()
       .then(setInterviews)
-      .catch(() => {})
+      .catch(requestError => setError(requestError.message || '面试历史加载失败'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -39,6 +40,7 @@ export default function InterviewHistory() {
   const avgScore = interviews.length ? (interviews.reduce((s, i) => s + i.score, 0) / interviews.length).toFixed(1) : 0;
 
   if (loading) return <div className="loading">加载中...</div>;
+  if (error) return <div className="alert alert-info">{error}</div>;
 
   return (
     <div className="page">

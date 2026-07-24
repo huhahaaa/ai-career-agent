@@ -2,9 +2,21 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getJobs, createJob, batchImportJobs } from '../api/client';
 
-const initialForm = { title: '', company: '', city: '', salary_min: '', salary_max: '', experience: '', education: '本科', skills_required: '', description: '' };
+const initialForm = {
+  title: '',
+  company: '',
+  location: '',
+  publish_time: '',
+  skills: '',
+  source_link: '',
+};
 const cities = ['北京', '上海', '深圳', '杭州', '广州', '成都', '南京', '武汉', '其他'];
-const experienceOpts = ['应届', '1年以下', '1-3年', '3-5年', '5-10年', '10年以上'];
+
+const statusMeta = {
+  pending: { label: '待审核', color: 'warning' },
+  approved: { label: '已通过', color: 'success' },
+  rejected: { label: '已驳回', color: 'error' },
+};
 
 export default function JobCollection() {
   const [jobs, setJobs] = useState([]);
@@ -33,9 +45,16 @@ export default function JobCollection() {
     }
     setSaving(true);
     try {
-      const skills = form.skills_required.split(/[,，]/).map(s => s.trim()).filter(Boolean);
-      await createJob({ ...form, salary_min: Number(form.salary_min) || 0, salary_max: Number(form.salary_max) || 0, skills_required: skills });
-      setMsg({ type: 'success', text: '创建成功' });
+      const skills = form.skills.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+      await createJob({
+        title: form.title.trim(),
+        company: form.company.trim(),
+        location: form.location || '未标注',
+        publish_time: form.publish_time || '未标注',
+        skills,
+        source_link: form.source_link || `https://manual.local/jobs/${Date.now()}`,
+      });
+      setMsg({ type: 'success', text: '岗位已导入，等待审核' });
       setShowForm(false);
       setForm(initialForm);
       load();
@@ -49,9 +68,16 @@ export default function JobCollection() {
     setSaving(true);
     try {
       const lines = batchText.trim().split('\n').filter(Boolean);
-      const jobs = lines.map(line => {
-        const [title, company, city] = line.split(/[,，]/).map(s => s.trim());
-        return { title, company, city: city || '北京', status: 'pending', skills_required: [], description: '' };
+      const jobs = lines.map((line, index) => {
+        const [title, company, location, sourceLink] = line.split(/[,，]/).map(s => s.trim());
+        return {
+          title,
+          company,
+          location: location || '未标注',
+          publish_time: '未标注',
+          skills: [],
+          source_link: sourceLink || `https://manual.local/jobs/${Date.now()}-${index}`,
+        };
       });
       await batchImportJobs({ jobs });
       setMsg({ type: 'success', text: `成功导入${jobs.length}个岗位` });
@@ -97,33 +123,22 @@ export default function JobCollection() {
             </div>
             <div className="form-group">
               <label>城市</label>
-              <select value={form.city} onChange={updateF('city')}>
+              <select value={form.location} onChange={updateF('location')}>
                 <option value="">选择城市</option>
                 {cities.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="form-group">
-              <label>经验要求</label>
-              <select value={form.experience} onChange={updateF('experience')}>
-                <option value="">不限</option>
-                {experienceOpts.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
+              <label>发布时间</label>
+              <input type="text" value={form.publish_time} onChange={updateF('publish_time')} placeholder="如：2026-07-24 或 未标注" />
             </div>
             <div className="form-group">
-              <label>最低薪资(K)</label>
-              <input type="number" value={form.salary_min} onChange={updateF('salary_min')} placeholder="如：15" />
-            </div>
-            <div className="form-group">
-              <label>最高薪资(K)</label>
-              <input type="number" value={form.salary_max} onChange={updateF('salary_max')} placeholder="如：30" />
+              <label>来源链接</label>
+              <input type="url" value={form.source_link} onChange={updateF('source_link')} placeholder="留空时生成本地导入链接" />
             </div>
             <div className="form-group form-group-full">
               <label>技能要求(逗号分隔)</label>
-              <input type="text" value={form.skills_required} onChange={updateF('skills_required')} placeholder="如：React, TypeScript, Node.js" />
-            </div>
-            <div className="form-group form-group-full">
-              <label>岗位描述</label>
-              <textarea value={form.description} onChange={updateF('description')} rows={3} placeholder="岗位职责描述..." />
+              <input type="text" value={form.skills} onChange={updateF('skills')} placeholder="如：React, TypeScript, Node.js" />
             </div>
             <div className="form-group form-group-full form-actions">
               <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '保存中...' : '保存'}</button>
@@ -137,13 +152,13 @@ export default function JobCollection() {
       {showBatch && (
         <div className="card">
           <h3>📥 批量导入岗位</h3>
-          <p className="text-muted">每行一个岗位，格式：岗位名称,公司名称,城市</p>
+          <p className="text-muted">每行一个岗位，格式：岗位名称,公司名称,城市,来源链接</p>
           <textarea
             className="batch-input"
             value={batchText}
             onChange={e => setBatchText(e.target.value)}
             rows={8}
-            placeholder={'前端开发工程师,字节跳动,北京\n后端开发工程师,腾讯,深圳\n全栈工程师,阿里巴巴,杭州'}
+            placeholder={'前端开发工程师,示例科技,北京,https://example.com/job/1\n后端开发工程师,课程项目公司,深圳,https://example.com/job/2'}
           />
           <div className="batch-actions">
             <button className="btn btn-primary" onClick={handleBatchImport} disabled={saving}>
@@ -166,8 +181,8 @@ export default function JobCollection() {
                 <th>岗位</th>
                 <th>公司</th>
                 <th>城市</th>
-                <th>薪资范围</th>
-                <th>经验</th>
+                <th>发布时间</th>
+                <th>技能</th>
                 <th>状态</th>
                 <th>操作</th>
               </tr>
@@ -177,10 +192,10 @@ export default function JobCollection() {
                 <tr key={j.id}>
                   <td><strong>{j.title}</strong></td>
                   <td>{j.company}</td>
-                  <td>{j.city}</td>
-                  <td>{j.salary_min / 1000}k - {j.salary_max / 1000}k</td>
-                  <td>{j.experience || '-'}</td>
-                  <td><span className={`tag tag-${j.status === 'published' ? 'success' : 'warning'}`}>{j.status === 'published' ? '已发布' : '待审核'}</span></td>
+                  <td>{j.location || '-'}</td>
+                  <td>{j.publish_time || '-'}</td>
+                  <td>{j.skills?.join('、') || '-'}</td>
+                  <td><span className={`tag tag-${statusMeta[j.status]?.color || ''}`}>{statusMeta[j.status]?.label || j.status}</span></td>
                   <td className="actions">
                     <button className="btn btn-sm btn-outline" onClick={() => navigate('/jobs/match', { state: { jobId: j.id } })}>匹配</button>
                   </td>
