@@ -10,7 +10,7 @@ AI Career Agent 是一个面向课程综合项目的求职辅助平台，覆盖�
 
 ## 技术框架
 
-- 后端：FastAPI
+- 后端：Python 3.11 + FastAPI
 - 前端：Vite + React
 - 数据库：SQLite 起步，后续可切换 MySQL/PostgreSQL
 - 知识库/向量检索：先预留 `services/vector_store.py`，后续接 Chroma、FAISS 或 Milvus
@@ -60,14 +60,13 @@ npm run dev
 `main` 只放稳定版本，不建议任何人长期直接在 `main` 开发。组长也应该使用自己的分支，例如：
 
 ```text
-leader/project-scaffold
+hechang/project-scaffold
 ```
 
 推荐五人分支：
 
 ```text
-leader/project-scaffold
-feature/backend-auth-api
+hechang/project-scaffold
 feature/job-data-audit
 feature/vector-matching
 feature/resume-interview-agent
@@ -79,4 +78,3 @@ feature/frontend-testing
 ## 当前阶段
 
 当前仓库处于第一阶段：项目框架搭建。重点是让每个成员可以从清晰边界开始开发，不在同一批文件里互相冲突。
-
