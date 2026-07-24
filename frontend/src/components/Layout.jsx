@@ -8,15 +8,15 @@ export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const navItems = [
-    { path: '/', label: '📊 数据看板', icon: '📊' },
-    { path: '/resume', label: '📄 简历管理', icon: '📄' },
-    { path: '/resume/review', label: '✅ 简历审核', icon: '✅' },
-    { path: '/jobs', label: '💼 岗位管理', icon: '💼' },
-    { path: '/jobs/review', label: '🔍 岗位审核', icon: '🔍' },
-    { path: '/jobs/match', label: '🎯 岗位匹配', icon: '🎯' },
-    { path: '/jobs/compare', label: '📈 多岗对比', icon: '📈' },
-    { path: '/interview', label: '🎤 模拟面试', icon: '🎤' },
-    { path: '/interview/history', label: '📋 面试记录', icon: '📋' },
+    { path: '/', label: '数据看板', icon: '📊' },
+    { path: '/resume', label: '简历管理', icon: '📄' },
+    { path: '/resume/review', label: '简历审核', icon: '✅' },
+    { path: '/jobs', label: '岗位管理', icon: '💼' },
+    { path: '/jobs/review', label: '岗位审核', icon: '🔍' },
+    { path: '/jobs/match', label: '岗位匹配', icon: '🎯' },
+    { path: '/jobs/compare', label: '多岗对比', icon: '📈' },
+    { path: '/interview', label: '模拟面试', icon: '🎤' },
+    { path: '/interview/history', label: '面试记录', icon: '📋' },
   ];
 
   return (

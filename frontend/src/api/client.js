@@ -4,36 +4,89 @@ const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 // 用户相关 Mock
 const mockUser = { id: 'u1', username: 'demo', email: 'demo@example.com', role: 'candidate', avatar: null, created_at: '2026-06-01' };
 
-// 简历 Mock 数据
-const mockResumes = [
+// 简历 Mock 数据（localStorage 持久化）
+const RESUME_STORAGE_KEY = 'ai_career_mock_resumes';
+
+const defaultResumes = [
   { id: 'r1', user_id: 'u1', filename: '张三_前端开发_2026.pdf', original_name: '张三_前端开发简历.pdf', version: 1, status: 'approved', parsed_content: { name: '张三', email: 'zhangsan@example.com', phone: '13800001111', education: [{ school: '清华大学', degree: '本科', major: '计算机科学', start: '2020', end: '2024' }], skills: ['React', 'Vue', 'TypeScript', 'Node.js', 'Python', 'CSS3', 'HTML5', 'Git', 'Webpack', 'Docker'], experience: [{ company: '某科技公司', position: '前端开发实习生', start: '2023-06', end: '2024-06', description: '参与公司核心产品前端开发，使用React+TypeScript技术栈' }], projects: [{ name: '电商平台', role: '前端负责人', description: '使用React+Redux搭建大型电商平台前端', tech_stack: ['React', 'Redux', 'TypeScript'] }] }, review_comment: '技能描述清晰，项目经验丰富', created_at: '2026-07-20T10:00:00' },
   { id: 'r2', user_id: 'u1', filename: '张三_全栈开发_v2.pdf', original_name: '全栈开发简历v2.pdf', version: 2, status: 'pending', parsed_content: null, review_comment: null, created_at: '2026-07-22T14:30:00' },
 ];
 
-// 岗位 Mock 数据
-const mockJobs = [
-  { id: 'j1', title: '前端开发工程师', company: '字节跳动', city: '北京', salary_min: 25000, salary_max: 45000, experience: '1-3年', education: '本科', skills_required: ['React', 'TypeScript', 'CSS3', 'HTML5', 'Webpack', 'Node.js', '性能优化', '工程化'], description: '负责抖音电商前端开发工作', status: 'published', created_at: '2026-07-15' },
-  { id: 'j2', title: '前端开发工程师', company: '腾讯', city: '深圳', salary_min: 20000, salary_max: 40000, experience: '1-3年', education: '本科', skills_required: ['Vue', 'JavaScript', 'CSS3', 'HTML5', 'Node.js', '小程序开发', '跨端开发'], description: '参与微信小程序和Web端开发', status: 'published', created_at: '2026-07-16' },
-  { id: 'j3', title: '全栈开发工程师', company: '阿里巴巴', city: '杭州', salary_min: 28000, salary_max: 50000, experience: '3-5年', education: '本科', skills_required: ['React', 'Node.js', 'Python', 'MySQL', 'Docker', 'Kubernetes', 'Redis', '微服务'], description: '负责淘宝商家平台全栈开发', status: 'published', created_at: '2026-07-17' },
-  { id: 'j4', title: '前端架构师', company: '美团', city: '北京', salary_min: 35000, salary_max: 60000, experience: '5-10年', education: '本科', skills_required: ['React', 'Vue', 'TypeScript', 'Node.js', '微前端', '性能优化', '工程化', '团队管理'], description: '负责美团前端架构设计和技术规划', status: 'published', created_at: '2026-07-18' },
+function loadResumes() {
+  try {
+    const raw = localStorage.getItem(RESUME_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return JSON.parse(JSON.stringify(defaultResumes));
+}
+
+function saveResumes(resumes) {
+  try { localStorage.setItem(RESUME_STORAGE_KEY, JSON.stringify(resumes)); } catch {}
+}
+
+let mockResumes = loadResumes();
+
+// 岗位 Mock 数据（localStorage 持久化）
+const JOB_STORAGE_KEY = 'ai_career_mock_jobs';
+
+const defaultJobs = [
+  { id: 'j1', title: '前端开发工程师', company: '字节跳动', city: '北京', salary_min: 25000, salary_max: 45000, experience: '1-3年', education: '本科', skills_required: ['React', 'TypeScript', 'CSS3', 'HTML5', 'Webpack', 'Node.js', '性能优化', '工程化'], description: '负责抖音电商前端开发工作，参与核心业务迭代', status: 'published', created_at: '2026-07-15' },
+  { id: 'j2', title: '前端开发工程师', company: '腾讯', city: '深圳', salary_min: 20000, salary_max: 40000, experience: '1-3年', education: '本科', skills_required: ['Vue', 'JavaScript', 'CSS3', 'HTML5', 'Node.js', '小程序开发', '跨端开发'], description: '参与微信小程序和Web端开发，负责支付模块前端', status: 'published', created_at: '2026-07-16' },
+  { id: 'j3', title: '全栈开发工程师', company: '阿里巴巴', city: '杭州', salary_min: 28000, salary_max: 50000, experience: '3-5年', education: '本科', skills_required: ['React', 'Node.js', 'Python', 'MySQL', 'Docker', 'Kubernetes', 'Redis', '微服务'], description: '负责淘宝商家平台全栈开发与架构升级', status: 'published', created_at: '2026-07-17' },
+  { id: 'j4', title: '前端架构师', company: '美团', city: '北京', salary_min: 35000, salary_max: 60000, experience: '5-10年', education: '本科', skills_required: ['React', 'Vue', 'TypeScript', 'Node.js', '微前端', '性能优化', '工程化', '团队管理'], description: '负责美团前端架构设计和技术规划，推动技术升级', status: 'published', created_at: '2026-07-18' },
   { id: 'j5', title: 'Web前端开发', company: '小红书', city: '上海', salary_min: 22000, salary_max: 38000, experience: '1-3年', education: '本科', skills_required: ['React', 'Vue', 'TypeScript', 'CSS3', 'HTML5', '小程序', '性能优化'], description: '参与小红书Web端和小程序开发', status: 'pending', created_at: '2026-07-19' },
-  { id: 'j6', title: '前端开发实习生', company: '滴滴', city: '北京', salary_min: 8000, salary_max: 12000, experience: '应届', education: '本科', skills_required: ['React', 'JavaScript', 'CSS3', 'HTML5', 'Git'], description: '参与滴滴出行前端开发', status: 'published', created_at: '2026-07-20' },
+  { id: 'j6', title: '前端开发实习生', company: '滴滴', city: '北京', salary_min: 8000, salary_max: 12000, experience: '应届', education: '本科', skills_required: ['React', 'JavaScript', 'CSS3', 'HTML5', 'Git'], description: '参与滴滴出行前端开发，有导师一对一指导', status: 'published', created_at: '2026-07-20' },
+  { id: 'j7', title: '后端开发工程师', company: '华为', city: '深圳', salary_min: 28000, salary_max: 50000, experience: '3-5年', education: '本科', skills_required: ['Java', 'Spring Boot', '微服务', 'MySQL', 'Redis', 'Kafka', 'Docker', '分布式系统'], description: '负责华为云核心服务后端开发与性能优化', status: 'published', created_at: '2026-07-21' },
+  { id: 'j8', title: '算法工程师(NLP)', company: '百度', city: '北京', salary_min: 30000, salary_max: 55000, experience: '1-3年', education: '硕士', skills_required: ['Python', 'PyTorch', 'NLP', 'Transformer', '深度学习', '数据挖掘', '机器学习'], description: '参与百度搜索算法优化，自然语言处理方向', status: 'published', created_at: '2026-07-21' },
+  { id: 'j9', title: '数据分析师', company: '京东', city: '北京', salary_min: 20000, salary_max: 35000, experience: '1-3年', education: '本科', skills_required: ['SQL', 'Python', 'Tableau', '数据可视化', 'Hive', 'SPSS', 'Excel'], description: '负责京东物流数据分析和业务决策支持', status: 'pending', created_at: '2026-07-21' },
+  { id: 'j10', title: 'UI/UX设计师', company: '网易', city: '杭州', salary_min: 18000, salary_max: 35000, experience: '1-3年', education: '本科', skills_required: ['Figma', 'Sketch', 'Photoshop', '交互设计', '用户研究', '动效设计', '设计系统'], description: '负责网易云音乐产品界面设计与用户体验优化', status: 'published', created_at: '2026-07-22' },
+  { id: 'j11', title: '测试开发工程师', company: '快手', city: '北京', salary_min: 22000, salary_max: 40000, experience: '1-3年', education: '本科', skills_required: ['Python', 'Selenium', '自动化测试', '性能测试', 'Jenkins', '接口测试', 'Java'], description: '负责快手短视频业务质量保障和自动化测试平台开发', status: 'published', created_at: '2026-07-22' },
+  { id: 'j12', title: 'DevOps工程师', company: '拼多多', city: '上海', salary_min: 25000, salary_max: 45000, experience: '3-5年', education: '本科', skills_required: ['Kubernetes', 'Docker', 'Jenkins', 'Linux', 'Prometheus', 'Ansible', 'Shell', 'Python'], description: '负责拼多多基础架构和CI/CD流水线建设', status: 'published', created_at: '2026-07-22' },
+  { id: 'j13', title: '前端开发工程师', company: 'B站', city: '上海', salary_min: 22000, salary_max: 40000, experience: '1-3年', education: '本科', skills_required: ['React', 'TypeScript', 'Next.js', 'Node.js', '性能优化', 'CSS3', 'WebAssembly'], description: '参与B站主站前端开发和直播业务技术升级', status: 'published', created_at: '2026-07-23' },
+  { id: 'j14', title: '移动端开发工程师', company: '携程', city: '上海', salary_min: 23000, salary_max: 42000, experience: '3-5年', education: '本科', skills_required: ['Flutter', 'React Native', 'Android', 'iOS', 'Dart', 'Swift', 'Kotlin'], description: '负责携程App跨端开发和用户体验优化', status: 'published', created_at: '2026-07-23' },
+  { id: 'j15', title: '安全工程师', company: '360', city: '北京', salary_min: 25000, salary_max: 48000, experience: '3-5年', education: '本科', skills_required: ['渗透测试', '漏洞挖掘', 'Python', '网络安全', '逆向工程', 'WAF', '入侵检测'], description: '负责360安全产品研发和漏洞挖掘分析', status: 'published', created_at: '2026-07-23' },
+  { id: 'j16', title: '产品经理(技术方向)', company: '小米', city: '北京', salary_min: 22000, salary_max: 40000, experience: '1-3年', education: '本科', skills_required: ['产品设计', '数据分析', 'Axure', '需求分析', 'SQL', 'PRD', '项目管理'], description: '负责小米IoT平台产品规划和需求设计', status: 'pending', created_at: '2026-07-23' },
+  { id: 'j17', title: '数据工程师', company: '蚂蚁集团', city: '杭州', salary_min: 28000, salary_max: 52000, experience: '3-5年', education: '本科', skills_required: ['Spark', 'Flink', 'Hadoop', 'Java', 'Scala', 'Kafka', 'Hive', '数据仓库'], description: '负责蚂蚁金服大数据平台建设和数据治理', status: 'published', created_at: '2026-07-24' },
+  { id: 'j18', title: '前端开发工程师', company: '米哈游', city: '上海', salary_min: 25000, salary_max: 48000, experience: '1-3年', education: '本科', skills_required: ['React', 'Three.js', 'Canvas', 'TypeScript', 'WebGL', '动画', '性能优化'], description: '负责米哈游游戏官网和运营活动前端开发', status: 'published', created_at: '2026-07-24' },
+  { id: 'j19', title: '全栈工程师', company: '知乎', city: '北京', salary_min: 24000, salary_max: 42000, experience: '3-5年', education: '本科', skills_required: ['React', 'Node.js', 'Go', 'MySQL', 'Redis', '消息队列', '微服务'], description: '参与知乎社区业务全栈开发和系统优化', status: 'published', created_at: '2026-07-24' },
+  { id: 'j20', title: 'Python开发工程师', company: '大疆', city: '深圳', salary_min: 25000, salary_max: 45000, experience: '1-3年', education: '本科', skills_required: ['Python', 'Django', 'Flask', 'MySQL', 'Docker', 'RESTful', 'Celery'], description: '负责大疆内部系统开发和无人机管理平台后端', status: 'published', created_at: '2026-07-24' },
+  { id: 'j21', title: '前端开发工程师', company: '蔚来', city: '上海', salary_min: 23000, salary_max: 43000, experience: '1-3年', education: '本科', skills_required: ['React', 'TypeScript', 'Node.js', '可视化', 'ECharts', '小程序', 'WebSocket'], description: '负责蔚来能源云平台前端开发和数据可视化', status: 'pending', created_at: '2026-07-24' },
+  { id: 'j22', title: 'AI产品经理', company: '商汤科技', city: '北京', salary_min: 25000, salary_max: 50000, experience: '3-5年', education: '硕士', skills_required: ['人工智能', '产品规划', 'CV', 'NLP', '数据分析', '竞品分析', 'PRD'], description: '负责商汤AI开放平台产品规划和商业化落地', status: 'published', created_at: '2026-07-24' },
 ];
+
+function loadJobs() {
+  try {
+    const raw = localStorage.getItem(JOB_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return JSON.parse(JSON.stringify(defaultJobs));
+}
+
+function saveJobs(jobs) {
+  try { localStorage.setItem(JOB_STORAGE_KEY, JSON.stringify(jobs)); } catch {}
+}
+
+let mockJobs = loadJobs();
 
 // 匹配结果 Mock 数据
 const mockMatches = [
-  { job_id: 'j1', job_title: '前端开发工程师', company: '字节跳动', overall_score: 82, skill_match_score: 78, experience_match_score: 85, education_match_score: 90, matched_skills: ['React', 'TypeScript', 'CSS3', 'HTML5', 'Webpack', 'Node.js'], missing_skills: ['性能优化', '工程化'] },
-  { job_id: 'j2', job_title: '前端开发工程师', company: '腾讯', overall_score: 70, skill_match_score: 65, experience_match_score: 75, education_match_score: 90, matched_skills: ['Vue', 'CSS3', 'HTML5', 'Node.js'], missing_skills: ['JavaScript', '小程序开发', '跨端开发'] },
-  { job_id: 'j3', job_title: '全栈开发工程师', company: '阿里巴巴', overall_score: 68, skill_match_score: 60, experience_match_score: 70, education_match_score: 90, matched_skills: ['React', 'Node.js', 'Python', 'Docker'], missing_skills: ['MySQL', 'Kubernetes', 'Redis', '微服务'] },
-  { job_id: 'j4', job_title: '前端架构师', company: '美团', overall_score: 55, skill_match_score: 50, experience_match_score: 45, education_match_score: 90, matched_skills: ['React', 'Vue', 'TypeScript', 'Node.js'], missing_skills: ['微前端', '性能优化', '工程化', '团队管理'] },
-  { job_id: 'j6', job_title: '前端开发实习生', company: '滴滴', overall_score: 95, skill_match_score: 98, experience_match_score: 90, education_match_score: 90, matched_skills: ['React', 'JavaScript', 'CSS3', 'HTML5', 'Git'], missing_skills: [] },
+  { job_id: 'j1', job_title: '前端开发工程师', company: '字节跳动', overall_score: 82, skill_match_score: 78, experience_match_score: 85, education_match_score: 90, matched_skills: ['React', 'TypeScript', 'CSS3', 'HTML5', 'Webpack', 'Node.js'], missing_skills: ['性能优化', '工程化'], city: '北京', salary_min: 25000, salary_max: 45000 },
+  { job_id: 'j2', job_title: '前端开发工程师', company: '腾讯', overall_score: 70, skill_match_score: 65, experience_match_score: 75, education_match_score: 90, matched_skills: ['Vue', 'CSS3', 'HTML5', 'Node.js'], missing_skills: ['JavaScript', '小程序开发', '跨端开发'], city: '深圳', salary_min: 20000, salary_max: 40000 },
+  { job_id: 'j3', job_title: '全栈开发工程师', company: '阿里巴巴', overall_score: 68, skill_match_score: 60, experience_match_score: 70, education_match_score: 90, matched_skills: ['React', 'Node.js', 'Python', 'Docker'], missing_skills: ['MySQL', 'Kubernetes', 'Redis', '微服务'], city: '杭州', salary_min: 28000, salary_max: 50000 },
+  { job_id: 'j4', job_title: '前端架构师', company: '美团', overall_score: 55, skill_match_score: 50, experience_match_score: 45, education_match_score: 90, matched_skills: ['React', 'Vue', 'TypeScript', 'Node.js'], missing_skills: ['微前端', '性能优化', '工程化', '团队管理'], city: '北京', salary_min: 35000, salary_max: 60000 },
+  { job_id: 'j6', job_title: '前端开发实习生', company: '滴滴', overall_score: 95, skill_match_score: 98, experience_match_score: 90, education_match_score: 90, matched_skills: ['React', 'JavaScript', 'CSS3', 'HTML5', 'Git'], missing_skills: [], city: '北京', salary_min: 8000, salary_max: 12000 },
+  { job_id: 'j13', job_title: '前端开发工程师', company: 'B站', overall_score: 78, skill_match_score: 80, experience_match_score: 75, education_match_score: 90, matched_skills: ['React', 'TypeScript', 'Node.js', 'CSS3'], missing_skills: ['Next.js', 'WebAssembly', '性能优化'], city: '上海', salary_min: 22000, salary_max: 40000 },
+  { job_id: 'j18', job_title: '前端开发工程师', company: '米哈游', overall_score: 72, skill_match_score: 75, experience_match_score: 70, education_match_score: 90, matched_skills: ['React', 'TypeScript'], missing_skills: ['Three.js', 'Canvas', 'WebGL', '动画'], city: '上海', salary_min: 25000, salary_max: 48000 },
+  { job_id: 'j21', job_title: '前端开发工程师', company: '蔚来', overall_score: 76, skill_match_score: 78, experience_match_score: 72, education_match_score: 90, matched_skills: ['React', 'TypeScript', 'Node.js'], missing_skills: ['可视化', 'ECharts', '小程序', 'WebSocket'], city: '上海', salary_min: 23000, salary_max: 43000 },
 ];
 
 // 面试记录 Mock 数据
 const mockInterviews = [
-  { id: 'i1', job_title: '前端开发工程师', company: '字节跳动', mode: 'mock', status: 'completed', score: 82, duration_minutes: 25, questions_count: 10, feedback: { overall: '技术基础扎实，但系统设计经验不足', strengths: ['React熟练度高', 'TypeScript基础好'], weaknesses: ['性能优化经验欠缺', '工程化理解不够深入'] }, created_at: '2026-07-21T09:00:00' },
-  { id: 'i2', job_title: '前端开发工程师', company: '腾讯', mode: 'mock', status: 'completed', score: 70, duration_minutes: 20, questions_count: 8, feedback: { overall: '需要加强基础知识学习', strengths: ['Vue使用经验'], weaknesses: ['JS基础', '算法能力'] }, created_at: '2026-07-22T14:00:00' },
-  { id: 'i3', job_title: '前端开发实习生', company: '滴滴', mode: 'mock', status: 'completed', score: 95, duration_minutes: 18, questions_count: 6, feedback: { overall: '优秀，完全满足实习要求', strengths: ['React熟练', '沟通表达清晰'], weaknesses: [] }, created_at: '2026-07-23T10:00:00' },
+  { id: 'i1', job_title: '前端开发工程师', company: '字节跳动', mode: 'mock', status: 'completed', score: 82, duration_minutes: 25, questions_count: 10, feedback: { overall: '技术基础扎实，但系统设计经验不足', strengths: ['React熟练度高', 'TypeScript基础好'], weaknesses: ['性能优化经验欠缺', '工程化理解不够深入'], dimension_scores: { star_method: 78, technical_accuracy: 85, communication: 80, problem_solving: 70, code_quality: 82, project_experience: 75 } }, created_at: '2026-07-21T09:00:00' },
+  { id: 'i2', job_title: '前端开发工程师', company: '腾讯', mode: 'mock', status: 'completed', score: 70, duration_minutes: 20, questions_count: 8, feedback: { overall: '需要加强基础知识学习', strengths: ['Vue使用经验'], weaknesses: ['JS基础', '算法能力'], dimension_scores: { star_method: 65, technical_accuracy: 72, communication: 75, problem_solving: 60, code_quality: 68, project_experience: 70 } }, created_at: '2026-07-22T14:00:00' },
+  { id: 'i3', job_title: '前端开发实习生', company: '滴滴', mode: 'mock', status: 'completed', score: 95, duration_minutes: 18, questions_count: 6, feedback: { overall: '优秀，完全满足实习要求', strengths: ['React熟练', '沟通表达清晰'], weaknesses: [], dimension_scores: { star_method: 92, technical_accuracy: 95, communication: 96, problem_solving: 93, code_quality: 94, project_experience: 92 } }, created_at: '2026-07-23T10:00:00' },
+  { id: 'i4', job_title: '前端开发工程师', company: 'B站', mode: 'mock', status: 'completed', score: 78, duration_minutes: 22, questions_count: 9, feedback: { overall: '技术基础不错，需要提升项目阐述能力', strengths: ['React掌握好', 'TypeScript使用熟练'], weaknesses: ['项目经验描述不清', 'Next.js不熟悉'], dimension_scores: { star_method: 70, technical_accuracy: 82, communication: 72, problem_solving: 78, code_quality: 80, project_experience: 68 } }, created_at: '2026-07-24T11:00:00' },
+  { id: 'i5', job_title: '前端开发工程师', company: '米哈游', mode: 'mock', status: 'completed', score: 72, duration_minutes: 20, questions_count: 8, feedback: { overall: '基础尚可，需要提升可视化相关能力', strengths: ['React基础扎实'], weaknesses: ['Canvas/WebGL不熟', '动画经验不足'], dimension_scores: { star_method: 68, technical_accuracy: 75, communication: 70, problem_solving: 72, code_quality: 74, project_experience: 65 } }, created_at: '2026-07-24T15:00:00' },
 ];
 
 // 会话 Mock 数据（模拟面试对话）
@@ -44,9 +97,22 @@ const mockMessages = [
 // 数据看板 Mock 数据
 const mockDashboard = {
   total_resumes: 2,
-  total_jobs: 45,
-  total_interviews: 3,
-  avg_score: 82.3,
+  total_jobs: 22,
+  total_interviews: 5,
+  avg_score: 78.4,
+  city_distribution: { '北京': 9, '上海': 7, '深圳': 3, '杭州': 3 },
+  recently_added: [
+    { id: 'j20', title: 'Python开发工程师', company: '大疆', city: '深圳', created_at: '2026-07-24' },
+    { id: 'j22', title: 'AI产品经理', company: '商汤科技', city: '北京', created_at: '2026-07-24' },
+    { id: 'j17', title: '数据工程师', company: '蚂蚁集团', city: '杭州', created_at: '2026-07-24' },
+  ],
+  recommended_jobs: [
+    { id: 'j6', title: '前端开发实习生', company: '滴滴', city: '北京', reason: '技能匹配度最高 (98%)', score: 95 },
+    { id: 'j1', title: '前端开发工程师', company: '字节跳动', city: '北京', reason: '综合匹配度高 (82%)', score: 82 },
+    { id: 'j13', title: '前端开发工程师', company: 'B站', city: '上海', reason: '技术栈匹配 (80%)', score: 78 },
+    { id: 'j21', title: '前端开发工程师', company: '蔚来', city: '上海', reason: '行业前景好', score: 76 },
+    { id: 'j18', title: '前端开发工程师', company: '米哈游', city: '上海', reason: '匹配度较高', score: 72 },
+  ],
   recent_interviews: mockInterviews,
   skill_distribution: [
     { name: 'React', level: 90 },
@@ -61,14 +127,14 @@ const mockDashboard = {
     { name: 'Docker', level: 55 },
   ],
   job_skill_requirements: [
-    { skill: 'React', count: 32 },
-    { skill: 'Vue', count: 28 },
-    { skill: 'TypeScript', count: 25 },
-    { skill: 'Node.js', count: 22 },
-    { skill: 'CSS3', count: 35 },
-    { skill: 'HTML5', count: 35 },
-    { skill: 'JavaScript', count: 30 },
-    { skill: 'Git', count: 25 },
+    { skill: 'React', count: 18 },
+    { skill: 'Vue', count: 12 },
+    { skill: 'TypeScript', count: 15 },
+    { skill: 'Node.js', count: 14 },
+    { skill: 'CSS3', count: 20 },
+    { skill: 'HTML5', count: 20 },
+    { skill: 'JavaScript', count: 16 },
+    { skill: 'Git', count: 14 },
   ],
   capability_gap: [
     { subject: 'React', personal: 90, required: 85 },
@@ -86,17 +152,22 @@ const mockDashboard = {
     { job: '阿里(全栈)', score: 68, color: '#f59e0b' },
     { job: '美团(架构师)', score: 55, color: '#ef4444' },
     { job: '滴滴(实习)', score: 95, color: '#22c55e' },
+    { job: 'B站(前端)', score: 78, color: '#ec4899' },
+    { job: '蔚来(前端)', score: 76, color: '#8b5cf6' },
+    { job: '米哈游(前端)', score: 72, color: '#14b8a6' },
   ],
   interview_trend: [
     { date: '07-21', score: 82 },
     { date: '07-22', score: 70 },
     { date: '07-23', score: 95 },
+    { date: '07-24', score: 78 },
+    { date: '07-24', score: 72 },
   ],
   job_city_distribution: [
-    { name: '北京', value: 12 },
-    { name: '上海', value: 10 },
-    { name: '深圳', value: 8 },
-    { name: '杭州', value: 7 },
+    { name: '北京', value: 9 },
+    { name: '上海', value: 7 },
+    { name: '深圳', value: 3 },
+    { name: '杭州', value: 3 },
     { name: '广州', value: 5 },
     { name: '成都', value: 3 },
   ],
@@ -183,22 +254,33 @@ export async function uploadResume(formData) {
   } catch {
     await delay(300);
     const filename = formData.get('file')?.name || '新简历.pdf';
-    return {
+    const nextVersion = mockResumes.length > 0
+      ? Math.max(...mockResumes.map(r => r.version || 0)) + 1
+      : 1;
+    const newResume = {
       id: 'r' + Date.now(),
       filename: filename,
       original_name: filename,
-      version: 3,
-      status: 'approved',
-      review_comment: '解析完成，技能匹配度良好',
+      version: nextVersion,
+      status: 'pending',
+      parsed_content: null,
+      review_comment: null,
       created_at: new Date().toISOString(),
-      parsed_content: mockResumes[0].parsed_content,
     };
+    mockResumes.unshift(newResume);
+    saveResumes(mockResumes);
+    return newResume;
   }
 }
 
 export async function deleteResume(id) {
   try { return await request(`/resumes/${id}`, { method: 'DELETE' }); }
-  catch { await delay(); return { success: true }; }
+  catch {
+    await delay();
+    mockResumes = mockResumes.filter(r => r.id !== id);
+    saveResumes(mockResumes);
+    return { success: true };
+  }
 }
 
 export async function getResumeDetail(id) {
@@ -228,17 +310,54 @@ export async function getJobDetail(id) {
 
 export async function createJob(data) {
   try { return await request('/jobs', { method: 'POST', body: JSON.stringify(data) }); }
-  catch { await delay(); return { id: 'j' + Date.now(), ...data, status: 'pending', created_at: new Date().toISOString().split('T')[0] }; }
+  catch {
+    await delay();
+    const newJob = {
+      id: 'j' + Date.now(),
+      ...data,
+      salary_min: Number(data.salary_min) || 0,
+      salary_max: Number(data.salary_max) || 0,
+      status: 'pending',
+      created_at: new Date().toISOString().split('T')[0],
+    };
+    mockJobs.unshift(newJob);
+    saveJobs(mockJobs);
+    return newJob;
+  }
 }
 
 export async function updateJobStatus(id, status) {
   try { return await request(`/jobs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }); }
-  catch { await delay(); return { success: true }; }
+  catch {
+    await delay();
+    const job = mockJobs.find(j => j.id === id);
+    if (job) { job.status = status; saveJobs(mockJobs); }
+    return { success: true };
+  }
 }
 
 export async function batchImportJobs(data) {
   try { return await request('/jobs/batch-import', { method: 'POST', body: JSON.stringify(data) }); }
-  catch { await delay(300); return { success: true, count: 5, message: '成功导入5个岗位' }; }
+  catch {
+    await delay(300);
+    const imported = (data.jobs || []).map((j, i) => ({
+      id: 'j' + (Date.now() + i),
+      title: j.title || '',
+      company: j.company || '',
+      city: j.city || '北京',
+      salary_min: 0,
+      salary_max: 0,
+      experience: j.experience || '不限',
+      education: '本科',
+      skills_required: j.skills_required || [],
+      description: j.description || '',
+      status: j.status || 'pending',
+      created_at: new Date().toISOString().split('T')[0],
+    }));
+    mockJobs.unshift(...imported);
+    saveJobs(mockJobs);
+    return { success: true, count: imported.length, message: `成功导入${imported.length}个岗位` };
+  }
 }
 
 // ===== 岗位匹配 =====

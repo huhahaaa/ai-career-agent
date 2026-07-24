@@ -6,6 +6,7 @@ export default function ResumeUpload() {
   const [resumes, setResumes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
   const navigate = useNavigate();
 
@@ -18,9 +19,37 @@ export default function ResumeUpload() {
 
   useEffect(() => { load(); }, []);
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // 全局阻止浏览器拖拽文件下载的默认行为
+  useEffect(() => {
+    const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
+    window.addEventListener('dragover', preventDefaults);
+    window.addEventListener('drop', preventDefaults);
+    return () => {
+      window.removeEventListener('dragover', preventDefaults);
+      window.removeEventListener('drop', preventDefaults);
+    };
+  }, []);
+
+  // 拖拽上传事件：阻止浏览器默认行为
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processFile(file);
+  };
+
+  const processFile = async (file) => {
     if (!['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type) && !file.name.match(/\.(pdf|doc|docx)$/i)) {
       setMsg({ type: 'error', text: '仅支持PDF/DOC/DOCX格式' });
       return;
@@ -31,14 +60,19 @@ export default function ResumeUpload() {
       const fd = new FormData();
       fd.append('file', file);
       await uploadResume(fd);
-      setMsg({ type: 'success', text: '上传成功，正在解析中...' });
+      setMsg({ type: 'success', text: '上传成功，已加入简历版本列表，可手动发起审核' });
       load();
     } catch {
       setMsg({ type: 'error', text: '上传失败' });
     } finally {
       setUploading(false);
-      e.target.value = '';
     }
+  };
+
+  const handleUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    e.target.value = '';
   };
 
   const handleDelete = async (id) => {
@@ -67,12 +101,17 @@ export default function ResumeUpload() {
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div className="card">
-        <div className="upload-area">
+        <div
+          className={`upload-area ${isDragging ? 'drag-over' : ''}`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
           <label className="upload-label">
             <input type="file" accept=".pdf,.doc,.docx" onChange={handleUpload} disabled={uploading} hidden />
             <div className="upload-box">
               <span className="upload-icon">📁</span>
-              <p>{uploading ? '上传中...' : '点击或拖拽上传简历'}</p>
+              <p>{isDragging ? '松开以上传简历' : uploading ? '上传中...' : '点击或拖拽上传简历'}</p>
               <span className="upload-hint">支持 PDF / DOC / DOCX 格式</span>
             </div>
           </label>
@@ -104,9 +143,13 @@ export default function ResumeUpload() {
                   <td>{r.review_comment || '-'}</td>
                   <td>{new Date(r.created_at).toLocaleString()}</td>
                   <td className="actions">
-                    {r.status === 'approved' && (
+                    {r.status === 'approved' ? (
                       <button className="btn btn-sm btn-outline" onClick={() => navigate('/resume/review', { state: { resumeId: r.id } })}>
                         查看详情
+                      </button>
+                    ) : (
+                      <button className="btn btn-sm btn-primary" onClick={() => navigate('/resume/review', { state: { resumeId: r.id } })}>
+                        去审核
                       </button>
                     )}
                     <button className="btn btn-sm btn-danger" onClick={() => handleDelete(r.id)}>删除</button>

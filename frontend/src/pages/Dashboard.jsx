@@ -44,6 +44,30 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* 为你推荐岗位 */}
+      {data.recommended_jobs && data.recommended_jobs.length > 0 && (
+        <div className="card recommended-section">
+          <h3>🎯 为你推荐</h3>
+          <p className="text-muted" style={{ marginBottom: '16px' }}>基于你的简历匹配度，以下岗位与你最为匹配：</p>
+          <div className="recommended-grid">
+            {data.recommended_jobs.map((job, i) => (
+              <div key={job.id} className="recommended-card">
+                <div className="recommended-rank">#{i + 1}</div>
+                <div className="recommended-info">
+                  <h4>{job.title}</h4>
+                  <p className="recommended-company">{job.company} · {job.city}</p>
+                  <p className="recommended-reason">{job.reason}</p>
+                </div>
+                <div className="recommended-score" style={{ color: job.score >= 80 ? '#22c55e' : job.score >= 60 ? '#f59e0b' : '#ef4444' }}>
+                  <span className="recommended-score-num">{job.score}</span>
+                  <span className="recommended-score-label">匹配度</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 图表区 1: 技能分布 */}
       <div className="charts-row">
         <div className="chart-card">

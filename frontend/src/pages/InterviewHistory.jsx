@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from 'recharts';
 import { getInterviewHistory, getInterviewReport } from '../api/client';
 
 export default function InterviewHistory() {
@@ -166,6 +166,31 @@ export default function InterviewHistory() {
 
                 {selectedReport.feedback && (
                   <>
+                    {/* 多维度评分雷达图 */}
+                    {selectedReport.feedback.dimension_scores && (
+                      <div className="result-radar-section" style={{ marginBottom: '16px' }}>
+                        <h4 style={{ textAlign: 'center', marginBottom: '8px' }}>🎯 多维度能力评估</h4>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <RadarChart
+                            data={Object.entries(selectedReport.feedback.dimension_scores).map(([key, val]) => ({
+                              dimension: key === 'star_method' ? 'STAR法则' :
+                                        key === 'technical_accuracy' ? '技术准确度' :
+                                        key === 'communication' ? '沟通表达' :
+                                        key === 'problem_solving' ? '问题解决' :
+                                        key === 'code_quality' ? '代码质量' :
+                                        key === 'project_experience' ? '项目经验' : key,
+                              score: val,
+                            }))}
+                            cx="50%" cy="50%" outerRadius="70%"
+                          >
+                            <PolarGrid stroke="#e5e7eb" />
+                            <PolarAngleAxis dataKey="dimension" tick={{ fontSize: 11 }} />
+                            <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                            <Radar name="得分" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.2} />
+                          </RadarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                     <div className="feedback-section">
                       <h4>📝 总体评价</h4>
                       <p>{selectedReport.feedback.overall}</p>

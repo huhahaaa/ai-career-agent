@@ -63,6 +63,12 @@ export default function JobCollection() {
     } finally { setSaving(false); }
   };
 
+  const statusMap = {
+    published: { label: '已发布', cls: 'success' },
+    rejected: { label: '已驳回', cls: 'danger' },
+    pending: { label: '待审核', cls: 'warning' },
+  };
+
   if (loading) return <div className="loading">加载中...</div>;
 
   return (
@@ -180,7 +186,7 @@ export default function JobCollection() {
                   <td>{j.city}</td>
                   <td>{j.salary_min / 1000}k - {j.salary_max / 1000}k</td>
                   <td>{j.experience || '-'}</td>
-                  <td><span className={`tag tag-${j.status === 'published' ? 'success' : 'warning'}`}>{j.status === 'published' ? '已发布' : '待审核'}</span></td>
+                  <td><span className={`tag tag-${statusMap[j.status]?.cls || 'warning'}`}>{statusMap[j.status]?.label || '待审核'}</span></td>
                   <td className="actions">
                     <button className="btn btn-sm btn-outline" onClick={() => navigate('/jobs/match', { state: { jobId: j.id } })}>匹配</button>
                   </td>
