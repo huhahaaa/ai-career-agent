@@ -21,6 +21,7 @@ from app.schemas.matching import (
     MatchResponse,
 )
 from app.services.matching import (
+    enrich_match_results,
     index_approved_job,
     index_approved_jobs,
     match_resume_to_jobs,
@@ -29,6 +30,13 @@ from app.services.vector_store import VectorStoreUnavailable
 from app.services.vector_store import clear_job_embeddings
 
 router = APIRouter()
+
+SKILL_GAP_DETAIL_KEYS = (
+    "matched_skills",
+    "missing_skills",
+    "gap_analysis",
+    "suggestion",
+)
 
 
 def _vector_service_error(exc: Exception) -> AppException:
@@ -44,6 +52,67 @@ def _coerce_database_job_id(value: str) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _load_json_list(value: str) -> List[str]:
+    if not value:
+        return []
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(item) for item in loaded]
+
+
+def _matching_resume_text(record: MatchingRecord) -> str:
+    if not record.resume or not record.resume.versions:
+        return ""
+
+    current_version = next(
+        (
+            version
+            for version in record.resume.versions
+            if version.version_number == record.resume.current_version_number
+        ),
+        None,
+    )
+    version = current_version or record.resume.versions[-1]
+    return version.content or ""
+
+
+def _matching_record_details(record: MatchingRecord) -> dict:
+    try:
+        details = json.loads(record.details or "{}")
+    except json.JSONDecodeError:
+        details = {}
+    if all(key in details for key in SKILL_GAP_DETAIL_KEYS):
+        return details
+    if record.job is None:
+        return details
+
+    resume_text = _matching_resume_text(record)
+    if not resume_text:
+        return details
+
+    enriched = enrich_match_results(
+        resume_text,
+        [
+            {
+                "job_id": str(record.job_id),
+                "title": record.job.title,
+                "company": record.job.company,
+                "score": details.get("score", record.total_score),
+                "reason": details.get("reason", ""),
+                "source_link": details.get("source_link", record.job.source_link),
+                "skills": _load_json_list(record.job.skills),
+            }
+        ],
+    )[0]
+    for key in SKILL_GAP_DETAIL_KEYS:
+        details[key] = enriched.get(key, [] if key.endswith("_skills") else "")
+    return details
 
 
 def _save_matching_records(
@@ -143,7 +212,7 @@ def matching_history(
                 "job_title": record.job.title if record.job else "",
                 "company": record.job.company if record.job else "",
                 "total_score": record.total_score,
-                "details": json.loads(record.details or "{}"),
+                "details": _matching_record_details(record),
                 "created_at": record.created_at,
             }
             for record in records

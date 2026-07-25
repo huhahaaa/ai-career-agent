@@ -3,6 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { runMatching } from '../api/client';
 
+function buildMatchSearchText(item) {
+  const values = [
+    item.title,
+    item.company,
+    item.reason,
+    item.source_link,
+    item.gap_analysis,
+    item.suggestion,
+    ...(item.skills || []),
+    ...(item.matched_skills || []),
+    ...(item.missing_skills || []),
+  ];
+  return values.filter(Boolean).join(' ').toLowerCase();
+}
+
 export default function JobSearchMatch() {
   const [resumeText, setResumeText] = useState('');
   const [targetPosition, setTargetPosition] = useState('');
@@ -16,9 +31,7 @@ export default function JobSearchMatch() {
   const visibleMatches = useMemo(() => {
     const normalized = keyword.trim().toLowerCase();
     if (!normalized) return matches;
-    return matches.filter(item =>
-      `${item.title} ${item.company}`.toLowerCase().includes(normalized),
-    );
+    return matches.filter(item => buildMatchSearchText(item).includes(normalized));
   }, [keyword, matches]);
 
   const handleRunMatching = async () => {
@@ -174,7 +187,13 @@ export default function JobSearchMatch() {
       )}
 
       {hasRun && visibleMatches.length === 0 && !loading && (
-        <div className="card"><div className="empty">当前索引中没有符合条件的已审核岗位</div></div>
+        <div className="card">
+          <div className="empty">
+            {matches.length
+              ? '当前匹配结果中没有符合筛选关键词的岗位，可清空结果筛选查看全部结果。'
+              : '当前索引中没有可匹配的已审核岗位，请先审核岗位并更新索引。'}
+          </div>
+        </div>
       )}
     </div>
   );

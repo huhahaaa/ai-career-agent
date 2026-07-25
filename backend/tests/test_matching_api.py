@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import select
 
 from app.api.v1.endpoints import matching as matching_endpoint
@@ -236,3 +238,63 @@ def test_matching_run_persists_history_for_database_jobs(
         records = db.scalars(select(MatchingRecord)).all()
         assert len(records) == 1
         assert records[0].job_id == job_id
+
+
+def test_matching_history_backfills_skill_gap_for_legacy_records(
+    client,
+    session_factory,
+):
+    headers = register_and_login(client)
+    with session_factory() as db:
+        user = db.scalar(select(User).where(User.username == "matching-user"))
+        job = JobPosting(
+            title="Python Backend Intern",
+            company="Example Inc",
+            location="Hangzhou",
+            publish_time="2026-07-24",
+            skills='["Python", "FastAPI", "Docker"]',
+            source_link="https://example.com/jobs/legacy-matching-history",
+            status="approved",
+            audit_comment="verified",
+        )
+        resume = Resume(
+            user_id=user.id,
+            title="Legacy matching resume",
+            current_version_number=1,
+        )
+        db.add_all([job, resume])
+        db.flush()
+        db.add(
+            ResumeVersion(
+                resume_id=resume.id,
+                version_number=1,
+                file_name="legacy.txt",
+                file_path="",
+                content="Python FastAPI project",
+            )
+        )
+        db.add(
+            MatchingRecord(
+                user_id=user.id,
+                resume_id=resume.id,
+                job_id=job.id,
+                total_score=70,
+                details=json.dumps(
+                    {
+                        "score": 70,
+                        "reason": "legacy semantic match",
+                        "source_link": job.source_link,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        db.commit()
+
+    response = client.get("/api/v1/matching/history", headers=headers)
+
+    assert response.status_code == 200
+    details = response.json()["data"][0]["details"]
+    assert details["matched_skills"] == ["Python", "FastAPI"]
+    assert details["missing_skills"] == ["Docker"]
+    assert "Docker" in details["gap_analysis"]
