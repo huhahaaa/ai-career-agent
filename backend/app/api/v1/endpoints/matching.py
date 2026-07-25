@@ -36,6 +36,8 @@ SKILL_GAP_DETAIL_KEYS = (
     "missing_skills",
     "gap_analysis",
     "suggestion",
+    "semantic_score",
+    "skill_coverage_score",
 )
 
 
@@ -112,6 +114,8 @@ def _matching_record_details(record: MatchingRecord) -> dict:
     )[0]
     for key in SKILL_GAP_DETAIL_KEYS:
         details[key] = enriched.get(key, [] if key.endswith("_skills") else "")
+    details["score"] = enriched.get("score", details.get("score", record.total_score))
+    details["reason"] = enriched.get("reason", details.get("reason", ""))
     return details
 
 
@@ -161,6 +165,8 @@ def _save_matching_records(
                     {
                         "target_position": payload.target_position,
                         "score": match.get("score", 0),
+                        "semantic_score": match.get("semantic_score"),
+                        "skill_coverage_score": match.get("skill_coverage_score"),
                         "reason": match.get("reason", ""),
                         "source_link": match.get("source_link", ""),
                         "matched_skills": match.get("matched_skills", []),
@@ -203,21 +209,23 @@ def matching_history(
         .where(MatchingRecord.user_id == current_user.id)
         .order_by(MatchingRecord.created_at.desc(), MatchingRecord.id.desc())
     ).all()
-    return success_response(
-        [
+    payload = []
+    for record in records:
+        details = _matching_record_details(record)
+        score = details.get("score", record.total_score)
+        payload.append(
             {
                 "id": record.id,
                 "resume_id": record.resume_id,
                 "job_id": record.job_id,
                 "job_title": record.job.title if record.job else "",
                 "company": record.job.company if record.job else "",
-                "total_score": record.total_score,
-                "details": _matching_record_details(record),
+                "total_score": round(float(score or 0)),
+                "details": details,
                 "created_at": record.created_at,
             }
-            for record in records
-        ]
-    )
+        )
+    return success_response(payload)
 
 
 @router.post(

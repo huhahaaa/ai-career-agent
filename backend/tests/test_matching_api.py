@@ -75,8 +75,43 @@ def test_match_result_skill_gap_analysis_is_added():
 
     assert matches[0]["matched_skills"] == ["Python", "FastAPI", "SQL"]
     assert matches[0]["missing_skills"] == ["Docker"]
+    assert matches[0]["semantic_score"] == 94.0
+    assert matches[0]["skill_coverage_score"] == 75.0
+    assert matches[0]["score"] == 88.3
     assert "缺少：Docker" in matches[0]["gap_analysis"]
     assert "Docker" in matches[0]["suggestion"]
+    assert "94.0" in matches[0]["reason"]
+    assert "75.0%" in matches[0]["reason"]
+
+
+def test_match_results_are_sorted_by_weighted_score():
+    matches = enrich_match_results(
+        "Python FastAPI SQL Docker",
+        [
+            {
+                "job_id": "semantic-only",
+                "title": "General Backend Intern",
+                "company": "Example Inc",
+                "score": 90.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/semantic-only",
+                "skills": ["Rust", "C++", "Zig"],
+            },
+            {
+                "job_id": "skill-covered",
+                "title": "Python Backend Intern",
+                "company": "Example Inc",
+                "score": 80.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/skill-covered",
+                "skills": ["Python", "FastAPI", "SQL", "Docker"],
+            },
+        ],
+    )
+
+    assert matches[0]["job_id"] == "skill-covered"
+    assert matches[0]["score"] == 93.0
+    assert matches[1]["score"] == 66.5
 
 
 def test_matching_api_returns_503_when_vector_service_is_unavailable(
@@ -199,7 +234,9 @@ def test_matching_run_persists_history_for_database_jobs(
                 "job_id": str(job_id),
                 "title": "Python Backend Intern",
                 "company": "Example Inc",
-                "score": 88.4,
+                "score": 84.4,
+                "semantic_score": 88.4,
+                "skill_coverage_score": 75.0,
                 "reason": "FastAPI and SQL overlap",
                 "source_link": "https://example.com/jobs/matching-history",
                 "matched_skills": ["Python", "FastAPI", "SQL"],
@@ -224,7 +261,9 @@ def test_matching_run_persists_history_for_database_jobs(
     assert response.status_code == 200
     assert history.status_code == 200
     assert history.json()["data"][0]["job_id"] == job_id
-    assert history.json()["data"][0]["total_score"] == 88
+    assert history.json()["data"][0]["total_score"] == 84
+    assert history.json()["data"][0]["details"]["semantic_score"] == 88.4
+    assert history.json()["data"][0]["details"]["skill_coverage_score"] == 75.0
     assert history.json()["data"][0]["details"]["matched_skills"] == [
         "Python",
         "FastAPI",
@@ -297,4 +336,8 @@ def test_matching_history_backfills_skill_gap_for_legacy_records(
     details = response.json()["data"][0]["details"]
     assert details["matched_skills"] == ["Python", "FastAPI"]
     assert details["missing_skills"] == ["Docker"]
+    assert details["semantic_score"] == 85.0
+    assert details["skill_coverage_score"] == 66.67
+    assert details["score"] == 79.5
+    assert response.json()["data"][0]["total_score"] == 80
     assert "Docker" in details["gap_analysis"]
