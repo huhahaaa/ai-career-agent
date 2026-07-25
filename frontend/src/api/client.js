@@ -268,7 +268,12 @@ export function rebuildApprovedJobIndex() {
   return request('/matching/index/approved', { method: 'POST' });
 }
 
-export function startInterview({ resumeText, targetPosition = '', targetJobId = null }) {
+export function startInterview({
+  resumeText,
+  targetPosition = '',
+  targetJobId = null,
+  interviewMode = '技术面',
+}) {
   return mockFallback(
     () => request('/interviews/start', {
       method: 'POST',
@@ -276,10 +281,12 @@ export function startInterview({ resumeText, targetPosition = '', targetJobId = 
         resume_text: resumeText,
         target_position: targetPosition,
         target_job_id: targetJobId,
+        interview_mode: interviewMode,
       }),
     }),
     () => ({
       session_id: `mock-${Date.now()}`,
+      interview_mode: interviewMode,
       question: `请结合项目经历说明你为什么适合${targetPosition || '目标岗位'}？`,
       tools_used: ['resume_analyzer', 'job_matcher', 'question_generator'],
     }),

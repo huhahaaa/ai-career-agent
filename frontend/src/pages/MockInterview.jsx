@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Camera, Mic, MicOff, VideoOff } from 'lucide-react';
 import { endInterview, sendMessage, startInterview } from '../api/client';
+import RadarChart from '../components/RadarChart';
+import { mapDimensionScores } from '../utils/dimensionLabels';
 
 const SPEECH_PAUSE_THRESHOLD_MS = 1500;
 const VISION_SAMPLE_INTERVAL_MS = 250;
@@ -9,6 +11,7 @@ const BRIGHTNESS_SAMPLE_INTERVAL_MS = 1500;
 const VISION_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
 const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const INTERVIEW_MODES = ['技术面', 'HR面', '压力面', '反馈教练'];
 
 const defaultVisionAnalysis = {
   faceDetected: false,
@@ -255,6 +258,7 @@ export default function MockInterview() {
   const location = useLocation();
   const [resumeText, setResumeText] = useState(location.state?.resumeText || '');
   const [targetPosition, setTargetPosition] = useState(location.state?.targetPosition || '');
+  const [interviewMode, setInterviewMode] = useState(location.state?.interviewMode || '技术面');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -311,6 +315,11 @@ export default function MockInterview() {
     if (!scores.length) return null;
     return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length);
   }, [scores]);
+
+  const reportDimensionData = useMemo(() => {
+    const dimensionScores = finalReport?.dimension_averages || {};
+    return mapDimensionScores(dimensionScores).filter(item => item.originalName !== 'total');
+  }, [finalReport]);
 
   const updateSpeechStats = () => {
     const startedAt = speechStartedAtRef.current;
@@ -604,13 +613,15 @@ export default function MockInterview() {
         resumeText: resumeText.trim(),
         targetPosition: targetPosition.trim(),
         targetJobId: location.state?.targetJobId || null,
+        interviewMode,
       });
 
       setSessionId(result.session_id);
+      setInterviewMode(result.interview_mode || interviewMode);
       setMessages([
         {
           role: 'interviewer',
-          content: `第 1/${result.total_questions || 8} 题：${result.question}`,
+          content: `【${result.interview_mode || interviewMode}】第 1/${result.total_questions || 8} 题：${result.question}`,
           timestamp: new Date().toISOString(),
         },
       ]);
@@ -642,11 +653,27 @@ export default function MockInterview() {
         ? `追问：${result.followup_question || result.next_question}`
         : `${result.feedback || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n本轮题目已完成，可以点击“结束面试”生成报告。'}`;
 
-      setMessages(current => [...current, {
-        role: 'interviewer',
-        content: responseText.trim(),
-        timestamp: new Date().toISOString(),
-      }]);
+      setMessages(current => {
+        const updated = [...current];
+        for (let index = updated.length - 1; index >= 0; index -= 1) {
+          if (updated[index].role === 'user' && updated[index].score == null) {
+            updated[index] = {
+              ...updated[index],
+              score: typeof result.score === 'number' ? result.score : undefined,
+              feedback: result.feedback || '',
+              strengths: result.strengths || '',
+              issues: result.issues || '',
+              improvementSuggestions: result.improvement_suggestions || '',
+            };
+            break;
+          }
+        }
+        return [...updated, {
+          role: 'interviewer',
+          content: responseText.trim(),
+          timestamp: new Date().toISOString(),
+        }];
+      });
     } catch (requestError) {
       setError(requestError.message || '回答提交失败');
     } finally {
@@ -686,6 +713,14 @@ export default function MockInterview() {
               />
             </div>
             <div className="form-group form-group-full">
+              <label>面试模式</label>
+              <select value={interviewMode} onChange={event => setInterviewMode(event.target.value)}>
+                {INTERVIEW_MODES.map(mode => (
+                  <option key={mode} value={mode}>{mode}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group form-group-full">
               <label>简历文本 *</label>
               <textarea
                 value={resumeText}
@@ -710,7 +745,7 @@ export default function MockInterview() {
       <div className="interview-header">
         <div>
           <h2>模拟面试</h2>
-          <span className="text-muted">{location.state?.jobInfo?.company || '目标岗位'} - {targetPosition || '综合面试'}</span>
+          <span className="text-muted">{location.state?.jobInfo?.company || '目标岗位'} - {targetPosition || '综合面试'} - {interviewMode}</span>
         </div>
         {!ended && (
           <button className="btn btn-danger" onClick={handleEnd} disabled={busy}>
@@ -795,7 +830,18 @@ export default function MockInterview() {
             <div key={`${message.timestamp}-${index}`} className={`chat-message ${message.role}`}>
               <div className="chat-bubble">
                 <div className="chat-role">{message.role === 'interviewer' ? 'AI 面试官' : '你'}</div>
+                {message.role === 'user' && typeof message.score === 'number' && (
+                  <div className="chat-score-badge">{message.score} 分</div>
+                )}
                 <div className="chat-content" style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
+                {message.role === 'user' && message.feedback && (
+                  <div className="chat-feedback-hint">
+                    <strong>反馈：</strong>{message.feedback}
+                    {message.strengths && <span> 优点：{message.strengths}</span>}
+                    {message.issues && <span> 问题：{message.issues}</span>}
+                    {message.improvementSuggestions && <span> 建议：{message.improvementSuggestions}</span>}
+                  </div>
+                )}
                 <div className="chat-time">{new Date(message.timestamp).toLocaleTimeString()}</div>
               </div>
             </div>
@@ -822,8 +868,29 @@ export default function MockInterview() {
       {ended && (
         <div className="card interview-result">
           <h3>本次面试小结</h3>
+          <p><strong>面试模式：</strong>{finalReport?.interview_mode || interviewMode}</p>
           <p><strong>平均得分：</strong>{finalReport?.overall_score ?? averageScore ?? '尚未完成作答'}</p>
           {finalReport?.summary && <p>{finalReport.summary}</p>}
+          {reportDimensionData.length > 0 && (
+            <div className="result-radar-section">
+              <h4>能力维度评估</h4>
+              <RadarChart data={reportDimensionData} height={260} />
+              <div className="dimension-scores-grid">
+                {reportDimensionData.map(item => (
+                  <div className="dimension-score-item" key={item.originalName}>
+                    <span className="dimension-name">{item.name}</span>
+                    <div className="dimension-bar-wrap">
+                      <div
+                        className="dimension-bar"
+                        style={{ width: `${Math.min(100, Math.max(0, item.score))}%` }}
+                      />
+                    </div>
+                    <span className="dimension-value">{item.score}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {feedback.length > 0 && (
             <ul>{feedback.map((item, index) => <li key={index}>{item}</li>)}</ul>
           )}
