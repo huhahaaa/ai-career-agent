@@ -111,11 +111,11 @@ cd D:\PythonProject\ai-career-agent\backend
 .\.venv\Scripts\python.exe -m app.commands.create_reviewer --username reviewer --email reviewer@example.com
 ```
 
-导入已审核岗位到向量库：
+同步清洗后的岗位数据到数据库，并重建已审核岗位向量索引：
 
 ```powershell
 cd D:\PythonProject\ai-career-agent\backend
-.\.venv\Scripts\python.exe scripts\index_jobs.py ..\data\processed\jobs_clean.jsonl
+.\.venv\Scripts\python.exe scripts\sync_clean_jobs.py ..\data\processed\jobs_clean.jsonl --rebuild-index
 ```
 
 前端：

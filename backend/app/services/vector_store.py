@@ -129,6 +129,19 @@ class VectorStore:
             "job_ids": indexed,
         }
 
+    def clear(self) -> Dict:
+        collection = self._get_collection()
+        try:
+            if collection.count() == 0:
+                return {"deleted_count": 0}
+            result = collection.get()
+            ids = result.get("ids") or []
+            if ids:
+                collection.delete(ids=ids)
+        except Exception as exc:
+            raise VectorStoreUnavailable("vector store clearing failed: %s" % exc) from exc
+        return {"deleted_count": len(ids)}
+
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         if not query.strip():
             raise ValueError("matching query cannot be empty")
@@ -176,6 +189,10 @@ def upsert_job_embedding(job: Dict) -> Dict:
 
 def upsert_approved_job_embeddings(jobs: Iterable[Dict]) -> Dict:
     return vector_store.upsert_approved_jobs(jobs)
+
+
+def clear_job_embeddings() -> Dict:
+    return vector_store.clear()
 
 
 def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:

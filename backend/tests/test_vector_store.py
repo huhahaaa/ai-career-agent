@@ -6,12 +6,22 @@ from app.services.vector_store import VectorStore
 class FakeCollection:
     def __init__(self):
         self.upserts = []
+        self.ids = []
+        self.deleted_ids = []
 
     def upsert(self, **payload):
         self.upserts.append(payload)
+        self.ids = payload["ids"]
 
     def count(self):
-        return 1
+        return len(self.ids)
+
+    def get(self):
+        return {"ids": self.ids}
+
+    def delete(self, **payload):
+        self.deleted_ids.extend(payload["ids"])
+        self.ids = [job_id for job_id in self.ids if job_id not in payload["ids"]]
 
     def query(self, **_payload):
         return {
@@ -80,3 +90,15 @@ def test_batch_index_skips_unapproved_jobs():
         "skipped_count": 1,
         "job_ids": ["JOB-001"],
     }
+
+
+def test_clear_deletes_existing_vectors():
+    collection = FakeCollection()
+    store = VectorStore(collection_factory=lambda: collection)
+
+    store.upsert_job(approved_job())
+    result = store.clear()
+
+    assert result == {"deleted_count": 1}
+    assert collection.deleted_ids == ["JOB-001"]
+    assert collection.count() == 0
