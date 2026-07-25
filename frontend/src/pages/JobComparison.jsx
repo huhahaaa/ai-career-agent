@@ -211,6 +211,7 @@ export default function JobComparison() {
 
   const hasSalaryData = barData.some(item => item.salary_min > 0 || item.salary_max > 0);
   const hasScoreData = selectedJobs.some(job => typeof job.match_score === 'number');
+  const selectedCount = selectedJobs.length;
 
   if (loading) return <div className="loading">加载真实岗位对比数据...</div>;
 
@@ -224,7 +225,7 @@ export default function JobComparison() {
         <div className="card-header-row">
           <div>
             <h3>选择对比岗位</h3>
-            <span className="text-muted">数据来源：{dataSource || '真实接口'}</span>
+            <span className="text-muted">数据来源：{dataSource || '真实接口'} | 已选 {selectedCount} / {compareData.length}</span>
           </div>
           <button className="btn btn-sm btn-outline" onClick={() => navigate('/jobs/match')}>去岗位匹配</button>
         </div>
@@ -232,15 +233,23 @@ export default function JobComparison() {
         {compareData.length === 0 ? (
           <div className="empty">没有可展示的真实岗位数据</div>
         ) : (
-          <div className="tag-group">
+          <div className="compare-job-grid">
             {compareData.map((job, index) => (
               <button
                 key={`${job.id}-${index}`}
-                className={`tag ${selected[index] ? 'tag-primary' : ''}`}
+                className={`compare-job-option ${selected[index] ? 'selected' : ''}`}
                 onClick={() => toggleJob(index)}
-                style={{ cursor: 'pointer' }}
+                type="button"
               >
-                {selected[index] ? '已选' : '未选'} {job.company} - {job.title}
+                <span className="compare-job-status">{selected[index] ? '已选' : '未选'}</span>
+                <span className="compare-job-main">
+                  <strong>{job.company}</strong>
+                  <span>{job.title}</span>
+                </span>
+                <span className="compare-job-meta">
+                  {job.city}
+                  <span>{formatScore(job.match_score)}</span>
+                </span>
               </button>
             ))}
           </div>

@@ -282,6 +282,81 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 /* ===== Compare Table ===== */
 .compare-table-wrapper { overflow-x: auto; }
 .compare-table th, .compare-table td { min-width: 120px; }
+.compare-job-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.compare-job-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.compare-job-option:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.compare-job-option.selected {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.compare-job-status {
+  align-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: .75rem;
+  line-height: 1.6;
+}
+.compare-job-option.selected .compare-job-status {
+  background: var(--primary);
+  color: #fff;
+}
+.compare-job-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.compare-job-main strong,
+.compare-job-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compare-job-main strong { font-size: .88rem; }
+.compare-job-main span {
+  color: var(--text-secondary);
+  font-size: .8rem;
+}
+.compare-job-meta {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+.compare-job-meta span {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
 
 /* ===== Interview Chat ===== */
 .interview-page { display: flex; flex-direction: column; height: calc(100vh - 108px); }
