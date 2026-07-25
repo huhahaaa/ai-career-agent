@@ -129,6 +129,19 @@ class VectorStore:
             "job_ids": indexed,
         }
 
+    def clear(self) -> Dict:
+        collection = self._get_collection()
+        try:
+            if collection.count() == 0:
+                return {"deleted_count": 0}
+            result = collection.get()
+            ids = result.get("ids") or []
+            if ids:
+                collection.delete(ids=ids)
+        except Exception as exc:
+            raise VectorStoreUnavailable("vector store clearing failed: %s" % exc) from exc
+        return {"deleted_count": len(ids)}
+
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         if not query.strip():
             raise ValueError("matching query cannot be empty")
@@ -152,6 +165,12 @@ class VectorStore:
         matches = []
         for index, job_id in enumerate(ids):
             metadata = metadatas[index] or {}
+            try:
+                skills = json.loads(metadata.get("skills_json", "[]") or "[]")
+            except json.JSONDecodeError:
+                skills = []
+            if not isinstance(skills, list):
+                skills = []
             distance = float(distances[index]) if index < len(distances) else 1.0
             score = round(max(0.0, min(1.0, 1.0 - distance)) * 100, 2)
             matches.append(
@@ -162,6 +181,7 @@ class VectorStore:
                     "score": score,
                     "reason": "简历与岗位描述的语义相似度为 %.1f%%" % score,
                     "source_link": metadata.get("source_link", ""),
+                    "skills": [str(skill) for skill in skills],
                 }
             )
         return matches
@@ -176,6 +196,10 @@ def upsert_job_embedding(job: Dict) -> Dict:
 
 def upsert_approved_job_embeddings(jobs: Iterable[Dict]) -> Dict:
     return vector_store.upsert_approved_jobs(jobs)
+
+
+def clear_job_embeddings() -> Dict:
+    return vector_store.clear()
 
 
 def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:

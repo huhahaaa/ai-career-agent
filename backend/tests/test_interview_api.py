@@ -1,7 +1,8 @@
 from sqlalchemy import select
 
 from app.models.interview import InterviewMessage, InterviewSession
-from app.models.resume import Resume, ResumeVersion
+from app.models.resume import RESUME_SOURCE_FORMAL, RESUME_SOURCE_INTERVIEW_SNAPSHOT, Resume, ResumeVersion
+from app.models.user import User
 
 
 def register_and_login(client):
@@ -92,7 +93,9 @@ def test_interview_session_messages_and_report_are_persisted(
     assert len(report_response.json()["data"]["messages"]) == 3
 
     with session_factory() as db:
-        assert len(db.scalars(select(Resume)).all()) == 1
+        resumes = db.scalars(select(Resume)).all()
+        assert len(resumes) == 1
+        assert resumes[0].source_type == RESUME_SOURCE_INTERVIEW_SNAPSHOT
         assert len(db.scalars(select(ResumeVersion)).all()) == 1
         sessions = db.scalars(select(InterviewSession)).all()
         messages = db.scalars(select(InterviewMessage)).all()
@@ -100,6 +103,53 @@ def test_interview_session_messages_and_report_are_persisted(
         assert sessions[0].score >= 70
         assert sessions[0].status == "completed"
         assert len(messages) == 4
+
+
+def test_interview_can_use_existing_formal_resume_without_creating_snapshot(
+    client,
+    session_factory,
+):
+    headers = register_and_login(client)
+    with session_factory() as db:
+        user = db.scalar(select(User).where(User.username == "interview-user"))
+        resume = Resume(
+            user_id=user.id,
+            title="formal resume",
+            current_version_number=1,
+            source_type=RESUME_SOURCE_FORMAL,
+            is_default=True,
+        )
+        db.add(resume)
+        db.flush()
+        db.add(
+            ResumeVersion(
+                resume_id=resume.id,
+                version_number=1,
+                file_name="formal.txt",
+                file_path="",
+                content="Python FastAPI SQL selected interview resume",
+            )
+        )
+        db.commit()
+        resume_id = resume.id
+
+    start_response = client.post(
+        "/api/v1/interviews/start",
+        headers=headers,
+        json={
+            "resume_id": resume_id,
+            "resume_text": "Manual text should be ignored",
+            "target_position": "Python Backend Intern",
+        },
+    )
+
+    assert start_response.status_code == 200
+    with session_factory() as db:
+        resumes = db.scalars(select(Resume)).all()
+        sessions = db.scalars(select(InterviewSession)).all()
+        assert len(resumes) == 1
+        assert resumes[0].source_type == RESUME_SOURCE_FORMAL
+        assert sessions[0].resume_id == resume_id
 
 
 def test_interview_agent_can_follow_up_before_scoring(client):

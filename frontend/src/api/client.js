@@ -107,6 +107,10 @@ const mockMatches = [
     score: 86.4,
     reason: '简历中的 React、TypeScript 经历与岗位要求高度相关。',
     source_link: 'https://example.com/jobs/1',
+    matched_skills: ['React', 'TypeScript'],
+    missing_skills: ['Node.js'],
+    gap_analysis: '已命中 2/3 项技能，缺少：Node.js。',
+    suggestion: '建议在项目经历中补充 Node.js 或后端接口协作经验。',
   },
 ];
 
@@ -114,12 +118,12 @@ const mockDashboard = {
   total_resumes: 1,
   total_jobs: mockJobs.length,
   total_interviews: 0,
-  avg_score: 0,
+  avg_score: null,
   recent_interviews: [],
   skill_distribution: [{ name: 'Python', level: 80 }, { name: 'React', level: 72 }],
   job_skill_requirements: [{ skill: 'Python', count: 8 }, { skill: 'React', count: 6 }],
   capability_gap: [{ subject: 'Python', personal: 80, required: 75 }],
-  multi_job_scores: [{ job: '示例科技(前端)', score: 86.4, color: '#2563eb' }],
+  multi_job_scores: [{ job: '示例科技(前端)', score: 86.4, color: 'var(--chart-primary)' }],
   interview_trend: [],
   job_city_distribution: [{ name: '北京', value: 1 }, { name: '上海', value: 1 }],
 };
@@ -155,7 +159,7 @@ export function getCurrentUser() {
 }
 
 export function getDashboard() {
-  return USE_MOCK ? Promise.resolve(mockDashboard) : unavailable('数据看板');
+  return mockFallback(() => request('/admin/dashboard'), () => mockDashboard);
 }
 
 export function getResumes() {
@@ -173,8 +177,35 @@ export function deleteResume(id) {
   return mockFallback(() => request(`/resumes/${id}`, { method: 'DELETE' }), () => null);
 }
 
+export function setDefaultResume(id) {
+  return mockFallback(
+    () => request(`/resumes/${id}/default`, { method: 'PATCH' }),
+    () => ({ id, is_default: true }),
+  );
+}
+
 export function getResumeDetail(id) {
   return mockFallback(() => request(`/resumes/${id}`), () => null);
+}
+
+export function auditResume({ resumeId = null, resumeText, targetPosition = '' }) {
+  return mockFallback(
+    () => request('/resumes/audit', {
+      method: 'POST',
+      body: JSON.stringify({
+        resume_id: resumeId,
+        resume_text: resumeText,
+        target_position: targetPosition,
+      }),
+    }),
+    () => ({
+      score: 76,
+      risk_flags: resumeText.length < 80 ? ['简历内容偏短，项目经历支撑不足。'] : [],
+      suggestions: ['补充项目背景、个人职责、技术动作和量化结果。'],
+      missing_keywords: targetPosition ? ['缓存', '部署', '接口性能优化'] : [],
+      risk_level: '中',
+    }),
+  );
 }
 
 export function getJobs(params = {}) {
@@ -227,14 +258,22 @@ export async function batchImportJobs(data) {
 }
 
 export function getMatches() {
-  return USE_MOCK ? Promise.resolve(mockMatches) : unavailable('匹配结果历史');
+  return mockFallback(() => request('/matching/history'), () => mockMatches);
 }
 
-export function runMatching(resumeText, targetPosition = '', topK = 5) {
+export function runMatching(resumeText, targetPosition = '', topK = 5, resumeId = null) {
+  const payload = {
+    resume_text: resumeText,
+    target_position: targetPosition,
+    top_k: topK,
+  };
+  if (resumeId) {
+    payload.resume_id = Number(resumeId);
+  }
   return mockFallback(
     () => request('/matching/run', {
       method: 'POST',
-      body: JSON.stringify({ resume_text: resumeText, target_position: targetPosition, top_k: topK }),
+      body: JSON.stringify(payload),
     }),
     () => ({ matches: mockMatches }),
   );
@@ -244,18 +283,30 @@ export function rebuildApprovedJobIndex() {
   return request('/matching/index/approved', { method: 'POST' });
 }
 
-export function startInterview({ resumeText, targetPosition = '', targetJobId = null }) {
+export function startInterview({
+  resumeText,
+  resumeId = null,
+  targetPosition = '',
+  targetJobId = null,
+  interviewMode = '技术面',
+}) {
+  const payload = {
+    resume_text: resumeText,
+    target_position: targetPosition,
+    target_job_id: targetJobId,
+    interview_mode: interviewMode,
+  };
+  if (resumeId) {
+    payload.resume_id = Number(resumeId);
+  }
   return mockFallback(
     () => request('/interviews/start', {
       method: 'POST',
-      body: JSON.stringify({
-        resume_text: resumeText,
-        target_position: targetPosition,
-        target_job_id: targetJobId,
-      }),
+      body: JSON.stringify(payload),
     }),
     () => ({
       session_id: `mock-${Date.now()}`,
+      interview_mode: interviewMode,
       question: `请结合项目经历说明你为什么适合${targetPosition || '目标岗位'}？`,
       tools_used: ['resume_analyzer', 'job_matcher', 'question_generator'],
     }),

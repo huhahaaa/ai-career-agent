@@ -1,10 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { runMatching } from '../api/client';
+import { getResumeDetail, getResumes, runMatching } from '../api/client';
+
+function buildMatchSearchText(item) {
+  const values = [
+    item.title,
+    item.company,
+    item.reason,
+    item.source_link,
+    item.gap_analysis,
+    item.suggestion,
+    ...(item.skills || []),
+    ...(item.matched_skills || []),
+    ...(item.missing_skills || []),
+  ];
+  return values.filter(Boolean).join(' ').toLowerCase();
+}
 
 export default function JobSearchMatch() {
   const [resumeText, setResumeText] = useState('');
+  const [resumes, setResumes] = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [targetPosition, setTargetPosition] = useState('');
   const [keyword, setKeyword] = useState('');
   const [matches, setMatches] = useState([]);
@@ -13,12 +31,39 @@ export default function JobSearchMatch() {
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
 
+  useEffect(() => {
+    getResumes()
+      .then(data => {
+        const list = data || [];
+        setResumes(list);
+        const defaultResume = list.find(item => item.is_default) || list[0];
+        if (defaultResume && !resumeText.trim()) {
+          setSelectedResumeId(String(defaultResume.id));
+        }
+      })
+      .catch(() => {
+        setResumes([]);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedResumeId) return;
+    setResumeLoading(true);
+    setMessage('');
+    getResumeDetail(selectedResumeId)
+      .then(detail => {
+        const versions = detail?.versions || [];
+        const version = versions[versions.length - 1];
+        setResumeText(version?.content || '');
+      })
+      .catch(error => setMessage(error.message || '简历正文加载失败'))
+      .finally(() => setResumeLoading(false));
+  }, [selectedResumeId]);
+
   const visibleMatches = useMemo(() => {
     const normalized = keyword.trim().toLowerCase();
     if (!normalized) return matches;
-    return matches.filter(item =>
-      `${item.title} ${item.company}`.toLowerCase().includes(normalized),
-    );
+    return matches.filter(item => buildMatchSearchText(item).includes(normalized));
   }, [keyword, matches]);
 
   const handleRunMatching = async () => {
@@ -29,7 +74,12 @@ export default function JobSearchMatch() {
     setLoading(true);
     setMessage('');
     try {
-      const result = await runMatching(resumeText.trim(), targetPosition.trim(), 8);
+      const result = await runMatching(
+        resumeText.trim(),
+        targetPosition.trim(),
+        8,
+        selectedResumeId || null,
+      );
       setMatches(result.matches || []);
       setHasRun(true);
     } catch (error) {
@@ -39,7 +89,7 @@ export default function JobSearchMatch() {
     }
   };
 
-  const scoreColor = score => score >= 80 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+  const scoreColor = score => score >= 80 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--error)';
 
   return (
     <div className="page">
@@ -64,12 +114,29 @@ export default function JobSearchMatch() {
             />
           </div>
           <div className="form-group form-group-full">
+            <label>使用已有简历</label>
+            <select
+              value={selectedResumeId}
+              onChange={event => setSelectedResumeId(event.target.value)}
+            >
+              <option value="">手动粘贴简历文本</option>
+              {resumes.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.is_default ? '默认 - ' : ''}{item.filename}（v{item.version}）
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group form-group-full">
             <label>简历文本 *</label>
             <textarea
               value={resumeText}
-              onChange={event => setResumeText(event.target.value)}
+              onChange={event => {
+                setResumeText(event.target.value);
+                if (selectedResumeId) setSelectedResumeId('');
+              }}
               rows={8}
-              placeholder="粘贴教育经历、技能、项目和实习经历"
+              placeholder={resumeLoading ? '正在加载简历正文...' : '粘贴教育经历、技能、项目和实习经历'}
             />
           </div>
           <div className="form-group form-group-full form-actions">
@@ -117,6 +184,36 @@ export default function JobSearchMatch() {
                   </div>
                 </div>
                 <p>{item.reason}</p>
+                {(item.matched_skills?.length > 0 || item.missing_skills?.length > 0) && (
+                  <div className="feedback-section">
+                    {item.matched_skills?.length > 0 && (
+                      <>
+                        <h4>命中技能</h4>
+                        <div className="tag-group">
+                          {item.matched_skills.map(skill => (
+                            <span key={skill} className="tag tag-success">{skill}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {item.missing_skills?.length > 0 && (
+                      <>
+                        <h4>缺失技能</h4>
+                        <div className="tag-group">
+                          {item.missing_skills.map(skill => (
+                            <span key={skill} className="tag tag-warning">{skill}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {(item.gap_analysis || item.suggestion) && (
+                  <div className="info-block">
+                    {item.gap_analysis && <div className="info-title">{item.gap_analysis}</div>}
+                    {item.suggestion && <p className="info-desc">{item.suggestion}</p>}
+                  </div>
+                )}
                 <div className="form-actions">
                   {item.source_link && (
                     <a className="btn btn-sm btn-outline" href={item.source_link} target="_blank" rel="noreferrer">
@@ -130,6 +227,7 @@ export default function JobSearchMatch() {
                         targetJobId: item.job_id,
                         targetPosition: item.title,
                         resumeText,
+                        resumeId: selectedResumeId || null,
                         jobInfo: { title: item.title, company: item.company },
                       },
                     })}
@@ -144,7 +242,13 @@ export default function JobSearchMatch() {
       )}
 
       {hasRun && visibleMatches.length === 0 && !loading && (
-        <div className="card"><div className="empty">当前索引中没有符合条件的已审核岗位</div></div>
+        <div className="card">
+          <div className="empty">
+            {matches.length
+              ? '当前匹配结果中没有符合筛选关键词的岗位，可清空结果筛选查看全部结果。'
+              : '当前索引中没有可匹配的已审核岗位，请先审核岗位并更新索引。'}
+          </div>
+        </div>
       )}
     </div>
   );

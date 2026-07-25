@@ -1,6 +1,5 @@
-import json
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -11,7 +10,7 @@ from app.core.exceptions import AppException
 from app.db.session import get_db
 from app.models.interview import InterviewMessage, InterviewSession
 from app.models.job import JobPosting
-from app.models.resume import Resume, ResumeVersion
+from app.models.resume import RESUME_SOURCE_INTERVIEW_SNAPSHOT, Resume
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.interview import (
@@ -21,12 +20,23 @@ from app.schemas.interview import (
     InterviewQuestion,
     InterviewStartRequest,
 )
+from app.services.agent_logging import agent_operation_log
 from app.services.interview_agent import evaluate_answer, finish_interview, start_interview
+from app.services.interview_summary import (
+    average_score_from_state,
+    is_effective_interview_session,
+    load_agent_state,
+    save_agent_state,
+    session_summary,
+    visible_messages,
+)
+from app.services.resume_selection import (
+    create_resume_snapshot,
+    get_user_formal_resume,
+    resume_current_text,
+)
 
 router = APIRouter()
-
-AGENT_STATE_TYPE = "interview_agent_state"
-
 
 def _coerce_database_job_id(value: object) -> Optional[int]:
     try:
@@ -35,24 +45,30 @@ def _coerce_database_job_id(value: object) -> Optional[int]:
         return None
 
 
-def _create_resume_snapshot(db: Session, user: User, resume_text: str) -> Resume:
-    resume = Resume(
-        user_id=user.id,
+def _resolve_interview_resume(
+    db: Session,
+    user: User,
+    payload: InterviewStartRequest,
+) -> tuple[str, Resume]:
+    if payload.resume_id is not None:
+        resume = get_user_formal_resume(db, user, payload.resume_id)
+        resume_text = resume_current_text(resume).strip()
+        if len(resume_text) < 10:
+            raise AppException(422, 42205, "selected resume has no usable text")
+        return resume_text, resume
+
+    resume_text = (payload.resume_text or "").strip()
+    if len(resume_text) < 10:
+        raise AppException(422, 42206, "resume_text or resume_id is required")
+    resume = create_resume_snapshot(
+        db,
+        user,
         title="模拟面试简历快照",
-        current_version_number=1,
+        file_name="interview-input.txt",
+        content=resume_text,
+        source_type=RESUME_SOURCE_INTERVIEW_SNAPSHOT,
     )
-    db.add(resume)
-    db.flush()
-    db.add(
-        ResumeVersion(
-            resume_id=resume.id,
-            version_number=1,
-            file_name="interview-input.txt",
-            file_path="",
-            content=resume_text,
-        )
-    )
-    return resume
+    return resume_text, resume
 
 
 def _resolve_target_job_id(db: Session, value: object) -> Optional[int]:
@@ -62,161 +78,38 @@ def _resolve_target_job_id(db: Session, value: object) -> Optional[int]:
     return job_id if db.get(JobPosting, job_id) is not None else None
 
 
-def _state_to_content(state: dict[str, Any]) -> str:
-    return json.dumps(
-        {
-            "type": AGENT_STATE_TYPE,
-            "state": state,
-        },
-        ensure_ascii=False,
-    )
-
-
-def _state_message(session: InterviewSession) -> InterviewMessage | None:
-    for message in sorted(session.messages, key=lambda item: item.id or 0):
-        if message.role != "system":
-            continue
-        try:
-            payload = json.loads(message.content)
-        except json.JSONDecodeError:
-            continue
-        if payload.get("type") == AGENT_STATE_TYPE:
-            return message
-    return None
-
-
-def _load_agent_state(session: InterviewSession) -> dict[str, Any]:
-    message = _state_message(session)
-    if message is not None:
-        try:
-            payload = json.loads(message.content)
-        except json.JSONDecodeError:
-            payload = {}
-        state = payload.get("state")
-        if isinstance(state, dict):
-            return state
-
-    fallback_question = session.current_question or "请做一个简短的自我介绍。"
-    return {
-        "version": 1,
-        "target_position": session.target_job.title if session.target_job else "",
-        "target_job_id": str(session.target_job_id or ""),
-        "questions": [fallback_question],
-        "current_index": 0,
-        "answers": [{}],
-        "status": "in_progress",
-    }
-
-
-def _save_agent_state(
-    db: Session,
-    session: InterviewSession,
-    state: dict[str, Any],
-) -> None:
-    message = _state_message(session)
-    if message is None:
-        db.add(
-            InterviewMessage(
-                session_id=session.id,
-                role="system",
-                content=_state_to_content(state),
-            )
-        )
-        return
-    message.content = _state_to_content(state)
-
-
-def _average_score_from_state(state: dict[str, Any]) -> int | None:
-    totals = []
-    for answer in state.get("answers", []):
-        scores = answer.get("scores") if isinstance(answer, dict) else None
-        if isinstance(scores, dict) and isinstance(scores.get("total"), (int, float)):
-            totals.append(scores["total"])
-    if not totals:
-        return None
-    return round(sum(totals) / len(totals))
-
-
-def _session_summary(session: InterviewSession) -> dict:
-    state = _load_agent_state(session)
-    user_messages = [message for message in session.messages if message.role == "user"]
-    answered_count = len(
-        [
-            answer
-            for answer in state.get("answers", [])
-            if isinstance(answer, dict) and answer.get("scores")
-        ]
-    )
-    score = session.score
-    if score is None:
-        score = _average_score_from_state(state) or 0
-
-    company = session.target_job.company if session.target_job else "目标岗位"
-    job_title = (
-        session.target_job.title
-        if session.target_job
-        else state.get("target_position") or "综合面试"
-    )
-    duration = 0
-    if session.created_at and session.updated_at:
-        try:
-            duration = max(
-                0,
-                round((session.updated_at - session.created_at).total_seconds() / 60),
-            )
-        except TypeError:
-            duration = 0
-
-    completed_report = state.get("completed_report")
-    report_summary = ""
-    if isinstance(completed_report, dict):
-        report_summary = completed_report.get("summary", "")
-
-    return {
-        "id": session.id,
-        "company": company,
-        "job_title": job_title,
-        "mode": "Agent 模拟面试",
-        "score": score,
-        "duration_minutes": duration,
-        "questions_count": answered_count or len(user_messages),
-        "status": state.get("status", session.status),
-        "created_at": session.created_at,
-        "feedback": {
-            "overall": report_summary or session.feedback or "暂无总体评价",
-            "strengths": ["已完成结构化评分"] if score else [],
-            "weaknesses": ["建议补充 STAR 结构、技术细节和量化结果"] if score else [],
-        },
-    }
-
-
-def _visible_messages(session: InterviewSession) -> list[dict]:
-    return [
-        {
-            "id": message.id,
-            "role": message.role,
-            "content": message.content,
-            "score": message.score,
-            "feedback": message.feedback,
-            "created_at": message.created_at,
-        }
-        for message in sorted(session.messages, key=lambda item: item.id or 0)
-        if message.role != "system"
-    ]
-
-
 @router.post("/start", response_model=ApiResponse[InterviewQuestion])
 def start(
     payload: InterviewStartRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[InterviewQuestion]:
-    result = start_interview(
-        resume_text=payload.resume_text,
-        target_position=payload.target_position,
-        target_job_id=payload.target_job_id,
-    )
-    resume = _create_resume_snapshot(db, current_user, payload.resume_text)
+    resume_text, resume = _resolve_interview_resume(db, current_user, payload)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.start",
+        request_summary={
+            "target_position": payload.target_position,
+            "target_job_id": payload.target_job_id,
+            "interview_mode": payload.interview_mode,
+            "resume_chars": len(resume_text),
+            "resume_id": payload.resume_id,
+        },
+    ) as log_context:
+        result = start_interview(
+            resume_text=resume_text,
+            target_position=payload.target_position,
+            target_job_id=payload.target_job_id,
+            interview_mode=payload.interview_mode,
+        )
+        log_context["response_summary"] = {
+            "question": result["question"],
+            "interview_mode": result.get("interview_mode"),
+            "position_bucket": result.get("position_bucket"),
+            "total_questions": result.get("total_questions"),
+            "tools_used": result.get("tools_used", []),
+        }
     session = InterviewSession(
         user_id=current_user.id,
         resume_id=resume.id,
@@ -226,7 +119,7 @@ def start(
     )
     db.add(session)
     db.flush()
-    _save_agent_state(db, session, result["agent_state"])
+    save_agent_state(db, session, result["agent_state"])
     db.add(
         InterviewMessage(
             session_id=session.id,
@@ -256,8 +149,25 @@ def answer(
     if interview_session is None or interview_session.user_id != current_user.id:
         raise AppException(404, 40402, "interview session not found")
 
-    state = _load_agent_state(interview_session)
-    result = evaluate_answer(session_state=state, answer=payload.answer)
+    state = load_agent_state(interview_session)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.answer",
+        request_summary={
+            "session_id": session_id,
+            "answer_chars": len(payload.answer),
+            "question_index": state.get("current_index", 0),
+            "interview_mode": state.get("interview_mode", "技术面"),
+        },
+    ) as log_context:
+        result = evaluate_answer(session_state=state, answer=payload.answer)
+        log_context["response_summary"] = {
+            "is_followup": result.get("is_followup"),
+            "score": result.get("score"),
+            "session_status": result.get("session_status"),
+            "current_index": result.get("current_index"),
+        }
     state = result["agent_state"]
 
     db.add(
@@ -284,10 +194,10 @@ def answer(
 
     interview_session.current_question = assistant_message or ""
     if result["score"] is not None:
-        interview_session.score = _average_score_from_state(state)
+        interview_session.score = average_score_from_state(state)
         interview_session.feedback = result["feedback"] or ""
     interview_session.updated_at = datetime.now(timezone.utc)
-    _save_agent_state(db, interview_session, state)
+    save_agent_state(db, interview_session, state)
     db.commit()
 
     public_result = {key: value for key, value in result.items() if key != "agent_state"}
@@ -307,14 +217,24 @@ def finish(
     if session is None or session.user_id != current_user.id:
         raise AppException(404, 40402, "interview session not found")
 
-    state = _load_agent_state(session)
-    report = finish_interview(session_state=state, session_id=session.id)
+    state = load_agent_state(session)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.finish",
+        request_summary={"session_id": session_id},
+    ) as log_context:
+        report = finish_interview(session_state=state, session_id=session.id)
+        log_context["response_summary"] = {
+            "overall_score": report.get("overall_score"),
+            "total_questions_answered": report.get("total_questions_answered"),
+        }
     session.status = "completed"
     session.score = int(round(report["overall_score"]))
     session.feedback = report["summary"]
     session.current_question = ""
     session.updated_at = datetime.now(timezone.utc)
-    _save_agent_state(db, session, state)
+    save_agent_state(db, session, state)
     db.commit()
     return success_response(InterviewFinishResult.model_validate(report))
 
@@ -329,7 +249,13 @@ def history(
         .where(InterviewSession.user_id == current_user.id)
         .order_by(InterviewSession.created_at.desc(), InterviewSession.id.desc())
     ).all()
-    return success_response([_session_summary(session) for session in sessions])
+    return success_response(
+        [
+            session_summary(session)
+            for session in sessions
+            if is_effective_interview_session(session)
+        ]
+    )
 
 
 @router.get("/{session_id}/report", response_model=ApiResponse[dict])
@@ -342,9 +268,9 @@ def report(
     if session is None or session.user_id != current_user.id:
         raise AppException(404, 40402, "interview session not found")
 
-    state = _load_agent_state(session)
-    summary = _session_summary(session)
-    summary["messages"] = _visible_messages(session)
+    state = load_agent_state(session)
+    summary = session_summary(session)
+    summary["messages"] = visible_messages(session)
     summary["agent_report"] = state.get("completed_report")
     summary["total_questions"] = len(state.get("questions", []))
     return success_response(summary)
