@@ -217,8 +217,10 @@ export default function JobComparison() {
     hasScore: typeof job.match_score === 'number',
   }));
 
-  const hasSalaryData = barData.some(item => item.salary_min > 0 || item.salary_max > 0);
-  const hasScoreData = selectedJobs.some(job => typeof job.match_score === 'number');
+  const salaryBarData = barData.filter(item => item.salary_min > 0 || item.salary_max > 0);
+  const matchBarData = barData.filter(item => item.hasScore);
+  const hasSalaryData = salaryBarData.length > 0;
+  const hasScoreData = matchBarData.length > 0;
   const selectedCount = selectedJobs.length;
 
   if (loading) return <div className="loading">加载真实岗位对比数据...</div>;
@@ -311,7 +313,7 @@ export default function JobComparison() {
               <h3>薪资范围对比</h3>
               {hasSalaryData ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={barData}>
+                  <BarChart data={salaryBarData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis />
@@ -330,13 +332,13 @@ export default function JobComparison() {
               <h3>匹配度对比</h3>
               {hasScoreData ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={barData}>
+                  <BarChart data={matchBarData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis domain={[0, 100]} />
                     <Tooltip formatter={value => `${value} 分`} />
                     <Bar dataKey="match" name="匹配分数" radius={[4, 4, 0, 0]}>
-                      {barData.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}
+                      {matchBarData.map((item, index) => <Cell key={item.name} fill={COLORS[index % COLORS.length]} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
