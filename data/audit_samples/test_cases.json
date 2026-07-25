@@ -1,0 +1,72 @@
+[
+  {
+    "case_id": "DATA-001",
+    "name": "缺少岗位名称",
+    "input": {"company": "示例公司", "location": "上海", "requirements": "Python"},
+    "expected": "rejected",
+    "reason": "title 为空，不能进入审核通过数据"
+  },
+  {
+    "case_id": "DATA-002",
+    "name": "缺少来源链接",
+    "input": {"title": "后端开发实习生", "company": "示例公司", "skills": ["Python"]},
+    "expected": "rejected",
+    "reason": "source_link 为空，数据不可追溯"
+  },
+  {
+    "case_id": "DATA-003",
+    "name": "JD 内容过短",
+    "input": {"title": "运营实习生", "company": "示例公司", "source_link": "https://example.com/job/3", "requirements": "招聘"},
+    "expected": "pending_or_rejected",
+    "reason": "正文过短，需要人工确认或驳回"
+  },
+  {
+    "case_id": "DATA-004",
+    "name": "相同来源链接重复",
+    "input": {"source_link": "https://jobs.example.com/123", "existing_source_link": "https://jobs.example.com/123"},
+    "expected": "duplicate",
+    "reason": "相同 source_link 不允许重复入库"
+  },
+  {
+    "case_id": "DATA-005",
+    "name": "同公司同岗位同城市相似记录",
+    "input": {"title": "Python Engineer Intern", "company": "Example AI", "location": "Berlin", "similarity": 0.94},
+    "expected": "pending",
+    "reason": "相似度超过阈值，进入人工确认"
+  },
+  {
+    "case_id": "DATA-006",
+    "name": "技能同义词归一化",
+    "input": {"skills_text": "Python、Fast API、RESTful API、React.js"},
+    "expected": ["Python", "FastAPI", "REST API", "React"],
+    "reason": "技能名称统一后供匹配和向量检索使用"
+  },
+  {
+    "case_id": "DATA-007",
+    "name": "乱码页面",
+    "input": {"title": "��Ƽ����", "description": "###@@@"},
+    "expected": "rejected",
+    "reason": "乱码严重，无法建立可靠岗位画像"
+  },
+  {
+    "case_id": "DATA-008",
+    "name": "页面可访问但发布日期未标注",
+    "input": {"title": "Operations Intern", "source_link": "https://jobs.example.com/8", "publish_time": ""},
+    "expected": "pending_then_manual_approve",
+    "reason": "需要记录缺失字段并在人工复核后决定是否进入知识库"
+  },
+  {
+    "case_id": "DATA-009",
+    "name": "审核通过岗位进入索引",
+    "input": {"status": "approved", "skills": ["Python", "SQL"]},
+    "expected": "eligible_for_index",
+    "reason": "只有 approved 岗位可以交给向量索引模块"
+  },
+  {
+    "case_id": "DATA-010",
+    "name": "驳回岗位不参与匹配",
+    "input": {"status": "rejected", "title": "广告兼职"},
+    "expected": "excluded_from_matching",
+    "reason": "避免低质量或不可追溯岗位影响匹配结果"
+  }
+]

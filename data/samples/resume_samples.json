@@ -1,0 +1,112 @@
+[
+  {
+    "id": "RESUME-001",
+    "category": "前端开发",
+    "title": "前端开发实习生简历",
+    "education": "本科-计算机科学",
+    "skills": ["React", "TypeScript", "HTML/CSS", "Vue", "Git"],
+    "summary": "计算机科学专业大三在读，有两次前端实习经历。独立完成过电商首页重构项目，使用 React+TypeScript 技术栈，页面加载速度提升40%。",
+    "projects": [
+      {"name": "电商首页重构", "tech": ["React", "TypeScript", "Webpack"], "result": "LCP从3.2s降到1.9s"}
+    ]
+  },
+  {
+    "id": "RESUME-002",
+    "category": "前端开发",
+    "title": "全栈偏前端实习生简历",
+    "education": "硕士-软件工程",
+    "skills": ["React", "Node.js", "TypeScript", "MongoDB", "Docker"],
+    "summary": "软件工程硕士，有全栈项目经验。参与校内选课系统开发，负责前后端联调和部署，系统支持2000+并发选课。",
+    "projects": [
+      {"name": "校内选课系统", "tech": ["React", "Node.js", "MongoDB", "Docker"], "result": "支持2000并发用户"}
+    ]
+  },
+  {
+    "id": "RESUME-003",
+    "category": "后端开发",
+    "title": "Python后端实习生简历",
+    "education": "本科-软件工程",
+    "skills": ["Python", "FastAPI", "PostgreSQL", "Redis", "Docker"],
+    "summary": "软件工程专业，掌握Python后端开发技术栈。独立开发过RESTful API服务，编写50+测试用例，接口覆盖率达90%以上。",
+    "projects": [
+      {"name": "任务管理API", "tech": ["Python", "FastAPI", "PostgreSQL", "Redis"], "result": "单元测试覆盖率90%"}
+    ]
+  },
+  {
+    "id": "RESUME-004",
+    "category": "后端开发",
+    "title": "Java后端实习生简历",
+    "education": "硕士-计算机科学",
+    "skills": ["Java", "Spring Boot", "MySQL", "Redis", "Kubernetes"],
+    "summary": "计算机硕士，熟悉Java企业级开发。实习期间负责订单系统微服务拆分，将单体应用拆分为3个微服务，部署于K8s集群。",
+    "projects": [
+      {"name": "订单系统拆分", "tech": ["Java", "Spring Boot", "MySQL", "Kubernetes"], "result": "部署效率提升60%"}
+    ]
+  },
+  {
+    "id": "RESUME-005",
+    "category": "产品经理",
+    "title": "产品实习生简历",
+    "education": "本科-信息管理",
+    "skills": ["需求分析", "PRD撰写", "Figma", "数据分析", "SQL"],
+    "summary": "信息管理专业，有产品实习经历。主导过校园二手交易小程序从0到1的产品设计，上线后月活用户3000+。",
+    "projects": [
+      {"name": "校园二手交易", "tech": ["Figma", "SQL", "Axure"], "result": "月活3000+"}
+    ]
+  },
+  {
+    "id": "RESUME-006",
+    "category": "产品经理",
+    "title": "用户增长产品简历",
+    "education": "硕士-市场营销",
+    "skills": ["用户研究", "A/B测试", "数据分析", "SQL", "Python"],
+    "summary": "市场营销硕士，专注用户增长。通过A/B测试优化注册流程，将注册转化率从12%提升到22%。",
+    "projects": [
+      {"name": "注册流程优化", "tech": ["A/B测试", "SQL", "Python"], "result": "转化率提升83%"}
+    ]
+  },
+  {
+    "id": "RESUME-007",
+    "category": "运营",
+    "title": "内容运营实习生简历",
+    "education": "本科-新闻传播",
+    "skills": ["内容策划", "数据分析", "Excel", "社群运营", "公众号运营"],
+    "summary": "新闻传播专业，有新媒体运营经验。运营校园公众号期间粉丝增长200%，单篇最高阅读量5万+。",
+    "projects": [
+      {"name": "校园公众号运营", "tech": ["Excel", "排版工具", "数据分析"], "result": "粉丝增长200%"}
+    ]
+  },
+  {
+    "id": "RESUME-008",
+    "category": "算法/机器学习",
+    "title": "机器学习实习生简历",
+    "education": "硕士-人工智能",
+    "skills": ["Python", "PyTorch", "TensorFlow", "Scikit-learn", "NLP"],
+    "summary": "人工智能专业硕士，研究方向为自然语言处理。在ACL会议发表论文一篇，开源项目GitHub 500+ star。",
+    "projects": [
+      {"name": "文本分类模型", "tech": ["Python", "PyTorch", "BERT"], "result": "F1 score达到0.92"}
+    ]
+  },
+  {
+    "id": "RESUME-009",
+    "category": "数字媒体",
+    "title": "视频制作实习生简历",
+    "education": "本科-数字媒体技术",
+    "skills": ["Premiere", "AE", "Figma", "短视频策划", "拍摄"],
+    "summary": "数字媒体专业，有短视频制作经验。独立运营个人B站账号，累计播放量100万+，单条视频最高播放20万。",
+    "projects": [
+      {"name": "B站个人频道", "tech": ["Premiere", "AE", "CapCut"], "result": "累计播放100万+"}
+    ]
+  },
+  {
+    "id": "RESUME-010",
+    "category": "后端开发",
+    "title": "Golang后端实习生简历",
+    "education": "本科-计算机科学",
+    "skills": ["Go", "gRPC", "PostgreSQL", "Redis", "Docker"],
+    "summary": "计算机科学专业，Go语言爱好者。参与开源项目贡献代码，独立开发高性能API网关，QPS达10000+。",
+    "projects": [
+      {"name": "API网关项目", "tech": ["Go", "gRPC", "Redis", "Docker"], "result": "QPS 10000+"}
+    ]
+  }
+]
