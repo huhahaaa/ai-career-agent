@@ -19,13 +19,21 @@ import {
 import { getJobs, getMatches } from '../api/client';
 
 const COLORS = ['#2563eb', '#06b6d4', '#f59e0b', '#ef4444', '#22c55e', '#8b5cf6'];
+const SOURCE_MISSING_VALUES = new Set(['未标注', '页面未标注']);
+
+function formatDisclosure(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '未填写';
+  return SOURCE_MISSING_VALUES.has(raw) ? '原页面未公开' : raw;
+}
 
 function parseSalaryRange(value) {
   const raw = String(value || '').trim();
-  if (!raw) return { min: 0, max: 0, label: '未填写' };
+  const label = formatDisclosure(raw);
+  if (!raw || SOURCE_MISSING_VALUES.has(raw)) return { min: 0, max: 0, label };
 
   const numbers = Array.from(raw.matchAll(/\d+(?:\.\d+)?/g)).map(match => Number(match[0]));
-  if (!numbers.length) return { min: 0, max: 0, label: raw };
+  if (!numbers.length) return { min: 0, max: 0, label };
 
   const normalized = numbers.map(item => (item > 1000 ? item / 1000 : item));
   const min = Math.min(...normalized);
@@ -34,7 +42,7 @@ function parseSalaryRange(value) {
 }
 
 function formatScore(score) {
-  return typeof score === 'number' ? `${Math.round(score)} 分` : '待匹配';
+  return typeof score === 'number' ? `${Math.round(score)} 分` : '未运行匹配';
 }
 
 function scoreColor(score) {
@@ -59,8 +67,8 @@ function normalizeJob(job, index, match = null) {
     salary_min: salary.min,
     salary_max: salary.max,
     salary_label: salary.label,
-    experience: job.experience || '未填写',
-    education: job.education || '未填写',
+    experience: formatDisclosure(job.experience),
+    education: formatDisclosure(job.education),
     skills_required: job.skills || job.skills_required || [],
     source_link: job.source_link || match?.details?.source_link || '',
     match_score: score,
