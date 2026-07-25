@@ -21,6 +21,7 @@ from app.schemas.interview import (
     InterviewQuestion,
     InterviewStartRequest,
 )
+from app.services.agent_logging import agent_operation_log
 from app.services.interview_agent import evaluate_answer, finish_interview, start_interview
 
 router = APIRouter()
@@ -211,11 +212,26 @@ def start(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[InterviewQuestion]:
-    result = start_interview(
-        resume_text=payload.resume_text,
-        target_position=payload.target_position,
-        target_job_id=payload.target_job_id,
-    )
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.start",
+        request_summary={
+            "target_position": payload.target_position,
+            "target_job_id": payload.target_job_id,
+            "resume_chars": len(payload.resume_text),
+        },
+    ) as log_context:
+        result = start_interview(
+            resume_text=payload.resume_text,
+            target_position=payload.target_position,
+            target_job_id=payload.target_job_id,
+        )
+        log_context["response_summary"] = {
+            "question": result["question"],
+            "total_questions": result.get("total_questions"),
+            "tools_used": result.get("tools_used", []),
+        }
     resume = _create_resume_snapshot(db, current_user, payload.resume_text)
     session = InterviewSession(
         user_id=current_user.id,
@@ -257,7 +273,23 @@ def answer(
         raise AppException(404, 40402, "interview session not found")
 
     state = _load_agent_state(interview_session)
-    result = evaluate_answer(session_state=state, answer=payload.answer)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.answer",
+        request_summary={
+            "session_id": session_id,
+            "answer_chars": len(payload.answer),
+            "question_index": state.get("current_index", 0),
+        },
+    ) as log_context:
+        result = evaluate_answer(session_state=state, answer=payload.answer)
+        log_context["response_summary"] = {
+            "is_followup": result.get("is_followup"),
+            "score": result.get("score"),
+            "session_status": result.get("session_status"),
+            "current_index": result.get("current_index"),
+        }
     state = result["agent_state"]
 
     db.add(
@@ -308,7 +340,17 @@ def finish(
         raise AppException(404, 40402, "interview session not found")
 
     state = _load_agent_state(session)
-    report = finish_interview(session_state=state, session_id=session.id)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="interview.finish",
+        request_summary={"session_id": session_id},
+    ) as log_context:
+        report = finish_interview(session_state=state, session_id=session.id)
+        log_context["response_summary"] = {
+            "overall_score": report.get("overall_score"),
+            "total_questions_answered": report.get("total_questions_answered"),
+        }
     session.status = "completed"
     session.score = int(round(report["overall_score"]))
     session.feedback = report["summary"]

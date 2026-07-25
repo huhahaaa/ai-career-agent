@@ -13,6 +13,7 @@ from app.models.resume import Resume, ResumeAuditReport, ResumeVersion
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.resume import ResumeAuditRequest, ResumeAuditResult
+from app.services.agent_logging import agent_operation_log
 from app.services.resume_audit import audit_resume_text
 
 router = APIRouter()
@@ -159,7 +160,22 @@ def audit_resume(
         if resume is None or resume.user_id != current_user.id:
             raise AppException(404, 40403, "resume not found")
 
-    result = audit_resume_text(payload.resume_text, payload.target_position)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="resume.audit",
+        request_summary={
+            "resume_id": resume_id,
+            "target_position": payload.target_position,
+            "resume_chars": len(payload.resume_text),
+        },
+    ) as log_context:
+        result = audit_resume_text(payload.resume_text, payload.target_position)
+        log_context["response_summary"] = {
+            "score": result.get("score"),
+            "risk_level": result.get("risk_level"),
+            "risk_count": len(result.get("risk_flags", [])),
+        }
     db.add(
         ResumeAuditReport(
             user_id=current_user.id,
