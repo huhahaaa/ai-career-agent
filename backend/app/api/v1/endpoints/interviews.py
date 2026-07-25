@@ -106,6 +106,7 @@ def _load_agent_state(session: InterviewSession) -> dict[str, Any]:
         "current_index": 0,
         "answers": [{}],
         "status": "in_progress",
+        "interview_mode": "技术面",
     }
 
 
@@ -177,7 +178,7 @@ def _session_summary(session: InterviewSession) -> dict:
         "id": session.id,
         "company": company,
         "job_title": job_title,
-        "mode": "Agent 模拟面试",
+        "mode": state.get("interview_mode", "Agent 模拟面试"),
         "score": score,
         "duration_minutes": duration,
         "questions_count": answered_count or len(user_messages),
@@ -219,6 +220,7 @@ def start(
         request_summary={
             "target_position": payload.target_position,
             "target_job_id": payload.target_job_id,
+            "interview_mode": payload.interview_mode,
             "resume_chars": len(payload.resume_text),
         },
     ) as log_context:
@@ -226,9 +228,12 @@ def start(
             resume_text=payload.resume_text,
             target_position=payload.target_position,
             target_job_id=payload.target_job_id,
+            interview_mode=payload.interview_mode,
         )
         log_context["response_summary"] = {
             "question": result["question"],
+            "interview_mode": result.get("interview_mode"),
+            "position_bucket": result.get("position_bucket"),
             "total_questions": result.get("total_questions"),
             "tools_used": result.get("tools_used", []),
         }
@@ -281,6 +286,7 @@ def answer(
             "session_id": session_id,
             "answer_chars": len(payload.answer),
             "question_index": state.get("current_index", 0),
+            "interview_mode": state.get("interview_mode", "技术面"),
         },
     ) as log_context:
         result = evaluate_answer(session_state=state, answer=payload.answer)

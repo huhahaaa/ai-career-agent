@@ -7,13 +7,16 @@ class InterviewStartRequest(BaseModel):
     resume_text: str = Field(..., min_length=10)
     target_job_id: Optional[Union[int, str]] = None
     target_position: str = ""
+    interview_mode: str = "技术面"
 
 
 class InterviewQuestion(BaseModel):
     session_id: str
+    interview_mode: str = "技术面"
     question: str
     tools_used: List[str] = []
     total_questions: int = 8
+    position_bucket: str = ""
 
 
 class InterviewAnswerRequest(BaseModel):
@@ -26,7 +29,16 @@ class InterviewAnswerResult(BaseModel):
     followup_question: Optional[str] = None
     score: Optional[int] = None
     feedback: Optional[str] = None
+    strengths: Optional[str] = None
+    issues: Optional[str] = None
+    improvement_suggestions: Optional[str] = None
     dimension_scores: Optional[Dict[str, Any]] = None
+    # 评分校准：Agent(LLM) 评分与规则评分对照，用于评估 Agent 稳定性（进阶要求 #2）
+    llm_score: Optional[int] = None
+    rule_score: Optional[int] = None
+    # 表达风险识别（基本要求 #15）：空泛表达 / 夸大绝对化表达
+    vague_flags: List[str] = []
+    biased_flags: List[str] = []
     next_question: Optional[str] = None
     current_index: int = 0
     total_questions: int = 8
@@ -49,6 +61,7 @@ class StarSuggestion(BaseModel):
 
 class InterviewFinishResult(BaseModel):
     session_id: str
+    interview_mode: str = "技术面"
     overall_score: float
     dimension_averages: Dict[str, float] = {}
     total_questions_answered: int = 0
@@ -56,3 +69,6 @@ class InterviewFinishResult(BaseModel):
     star_suggestions: List[StarSuggestion] = []
     practice_plan: str = ""
     summary: str = ""
+    question_bank_summary: Dict[str, Any] = {}
+    # 评分校准汇总：Agent 评分与规则评分的均值对照（进阶要求 #2）
+    calibration_summary: Dict[str, Any] = {}
