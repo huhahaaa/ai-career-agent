@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Plus, Target, Upload } from 'lucide-react';
 import { getJobs, createJob, batchImportJobs } from '../api/client';
 
 const initialForm = {
@@ -98,13 +99,16 @@ export default function JobCollection() {
 
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => { setShowForm(!showForm); setShowBatch(false); }}>
-          ➕ 新增岗位
+          <Plus size={16} />
+          新增岗位
         </button>
         <button className="btn btn-outline" onClick={() => { setShowBatch(!showBatch); setShowForm(false); }}>
-          📥 批量导入
+          <Upload size={16} />
+          批量导入
         </button>
         <button className="btn btn-outline" onClick={() => navigate('/jobs/match')}>
-          🎯 岗位匹配
+          <Target size={16} />
+          岗位匹配
         </button>
       </div>
 

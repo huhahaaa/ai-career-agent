@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { runMatching } from '../api/client';
+import { getResumeDetail, getResumes, runMatching } from '../api/client';
 
 function buildMatchSearchText(item) {
   const values = [
@@ -20,6 +20,9 @@ function buildMatchSearchText(item) {
 
 export default function JobSearchMatch() {
   const [resumeText, setResumeText] = useState('');
+  const [resumes, setResumes] = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [targetPosition, setTargetPosition] = useState('');
   const [keyword, setKeyword] = useState('');
   const [matches, setMatches] = useState([]);
@@ -27,6 +30,35 @@ export default function JobSearchMatch() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getResumes()
+      .then(data => {
+        const list = data || [];
+        setResumes(list);
+        const defaultResume = list.find(item => item.is_default) || list[0];
+        if (defaultResume && !resumeText.trim()) {
+          setSelectedResumeId(String(defaultResume.id));
+        }
+      })
+      .catch(() => {
+        setResumes([]);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedResumeId) return;
+    setResumeLoading(true);
+    setMessage('');
+    getResumeDetail(selectedResumeId)
+      .then(detail => {
+        const versions = detail?.versions || [];
+        const version = versions[versions.length - 1];
+        setResumeText(version?.content || '');
+      })
+      .catch(error => setMessage(error.message || '简历正文加载失败'))
+      .finally(() => setResumeLoading(false));
+  }, [selectedResumeId]);
 
   const visibleMatches = useMemo(() => {
     const normalized = keyword.trim().toLowerCase();
@@ -42,7 +74,12 @@ export default function JobSearchMatch() {
     setLoading(true);
     setMessage('');
     try {
-      const result = await runMatching(resumeText.trim(), targetPosition.trim(), 8);
+      const result = await runMatching(
+        resumeText.trim(),
+        targetPosition.trim(),
+        8,
+        selectedResumeId || null,
+      );
       setMatches(result.matches || []);
       setHasRun(true);
     } catch (error) {
@@ -52,7 +89,7 @@ export default function JobSearchMatch() {
     }
   };
 
-  const scoreColor = score => score >= 80 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+  const scoreColor = score => score >= 80 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--error)';
 
   return (
     <div className="page">
@@ -77,12 +114,29 @@ export default function JobSearchMatch() {
             />
           </div>
           <div className="form-group form-group-full">
+            <label>使用已有简历</label>
+            <select
+              value={selectedResumeId}
+              onChange={event => setSelectedResumeId(event.target.value)}
+            >
+              <option value="">手动粘贴简历文本</option>
+              {resumes.map(item => (
+                <option key={item.id} value={item.id}>
+                  {item.is_default ? '默认 - ' : ''}{item.filename}（v{item.version}）
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group form-group-full">
             <label>简历文本 *</label>
             <textarea
               value={resumeText}
-              onChange={event => setResumeText(event.target.value)}
+              onChange={event => {
+                setResumeText(event.target.value);
+                if (selectedResumeId) setSelectedResumeId('');
+              }}
               rows={8}
-              placeholder="粘贴教育经历、技能、项目和实习经历"
+              placeholder={resumeLoading ? '正在加载简历正文...' : '粘贴教育经历、技能、项目和实习经历'}
             />
           </div>
           <div className="form-group form-group-full form-actions">
@@ -173,6 +227,7 @@ export default function JobSearchMatch() {
                         targetJobId: item.job_id,
                         targetPosition: item.title,
                         resumeText,
+                        resumeId: selectedResumeId || null,
                         jobInfo: { title: item.title, company: item.company },
                       },
                     })}

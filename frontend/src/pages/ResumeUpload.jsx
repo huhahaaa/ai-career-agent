@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getResumes, uploadResume, deleteResume } from '../api/client';
+import { Eye, Star, Trash2 } from 'lucide-react';
+import { getResumes, uploadResume, deleteResume, setDefaultResume } from '../api/client';
 
 export default function ResumeUpload() {
   const [resumes, setResumes] = useState([]);
@@ -67,6 +68,19 @@ export default function ResumeUpload() {
     }
   };
 
+  const handleSetDefault = async (id) => {
+    try {
+      await setDefaultResume(id);
+      setMsg({ type: 'success', text: '默认简历已更新，数据看板将优先统计这份简历。' });
+      load();
+    } catch (error) {
+      setMsg({
+        type: error.code === 50100 ? 'info' : 'error',
+        text: error.message || '默认简历设置失败',
+      });
+    }
+  };
+
   const statusLabel = (s) => {
     const map = { pending: '待审核', processing: '解析中', approved: '已通过', rejected: '已驳回' };
     return map[s] || s;
@@ -104,6 +118,7 @@ export default function ResumeUpload() {
               <tr>
                 <th>文件名</th>
                 <th>版本</th>
+                <th>默认</th>
                 <th>状态</th>
                 <th>审核意见</th>
                 <th>上传时间</th>
@@ -115,16 +130,30 @@ export default function ResumeUpload() {
                 <tr key={r.id}>
                   <td>{r.filename}</td>
                   <td><span className="tag">v{r.version}</span></td>
+                  <td>
+                    {r.is_default ? (
+                      <span className="tag tag-primary">当前主简历</span>
+                    ) : (
+                      <button className="btn btn-sm btn-outline" onClick={() => handleSetDefault(r.id)}>
+                        <Star size={14} />
+                        设为默认
+                      </button>
+                    )}
+                  </td>
                   <td><span className={`tag tag-${statusColor(r.status)}`}>{statusLabel(r.status)}</span></td>
                   <td>{r.review_comment || '-'}</td>
                   <td>{new Date(r.created_at).toLocaleString()}</td>
                   <td className="actions">
                     {r.status === 'approved' && (
                       <button className="btn btn-sm btn-outline" onClick={() => navigate('/resume/review', { state: { resumeId: r.id } })}>
+                        <Eye size={14} />
                         查看详情
                       </button>
                     )}
-                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(r.id)}>删除</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => handleDelete(r.id)}>
+                      <Trash2 size={14} />
+                      删除
+                    </button>
                   </td>
                 </tr>
               ))}

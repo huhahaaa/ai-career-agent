@@ -184,7 +184,7 @@ export default function ResumeReview() {
                       <YAxis domain={[0, 100]} />
                       <Tooltip formatter={value => `${value} 分`} />
                       <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                        <Cell fill={report.score >= 80 ? '#16a34a' : report.score >= 60 ? '#d97706' : '#dc2626'} />
+                        <Cell fill={report.score >= 80 ? 'var(--success)' : report.score >= 60 ? 'var(--warning)' : 'var(--error)'} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>

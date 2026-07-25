@@ -3,28 +3,31 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db
-from app.models.resume import Resume, ResumeAuditReport, ResumeVersion
+from app.models.resume import RESUME_SOURCE_FORMAL, Resume, ResumeAuditReport, ResumeVersion
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.resume import ResumeAuditRequest, ResumeAuditResult
 from app.services.agent_logging import agent_operation_log
 from app.services.resume_audit import audit_resume_text
+from app.services.resume_selection import (
+    ensure_default_resume,
+    formal_resume_query,
+    get_user_formal_resume,
+    latest_resume_version,
+    make_default_resume,
+    user_has_default_resume,
+)
 
 router = APIRouter()
 
 ALLOWED_RESUME_SUFFIXES = {".pdf", ".doc", ".docx", ".txt", ".md"}
 MAX_RESUME_BYTES = 5 * 1024 * 1024
 UPLOAD_ROOT = Path("data/uploads/resumes")
-
-
-def _latest_version(resume: Resume) -> ResumeVersion | None:
-    return resume.versions[-1] if resume.versions else None
 
 
 def _latest_report(resume: Resume) -> ResumeAuditReport | None:
@@ -66,12 +69,14 @@ def _audit_report_to_response(report: ResumeAuditReport) -> dict:
 
 
 def _resume_summary(resume: Resume) -> dict:
-    latest = _latest_version(resume)
+    latest = latest_resume_version(resume)
     latest_report = _latest_report(resume)
     return {
         "id": resume.id,
         "filename": latest.file_name if latest else resume.title,
         "version": resume.current_version_number,
+        "source_type": resume.source_type,
+        "is_default": bool(resume.is_default),
         "status": "approved" if latest_report else "pending",
         "review_comment": (
             "已生成审核报告，综合评分 %s 分" % latest_report.score
@@ -95,8 +100,7 @@ def list_resumes(
     db: Session = Depends(get_db),
 ) -> ApiResponse[List[dict]]:
     resumes = db.scalars(
-        select(Resume)
-        .where(Resume.user_id == current_user.id)
+        formal_resume_query(current_user.id)
         .order_by(Resume.updated_at.desc(), Resume.id.desc())
     ).all()
     return success_response([_resume_summary(resume) for resume in resumes])
@@ -122,6 +126,8 @@ async def upload_resume(
         user_id=current_user.id,
         title=file.filename or "resume",
         current_version_number=1,
+        source_type=RESUME_SOURCE_FORMAL,
+        is_default=not user_has_default_resume(db, current_user.id),
     )
     db.add(resume)
     db.flush()
@@ -152,9 +158,7 @@ def resume_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[dict]:
-    resume = db.get(Resume, resume_id)
-    if resume is None or resume.user_id != current_user.id:
-        raise AppException(404, 40403, "resume not found")
+    resume = get_user_formal_resume(db, current_user, resume_id)
     latest_report = _latest_report(resume)
     return success_response(
         {
@@ -192,16 +196,29 @@ def delete_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[None]:
-    resume = db.get(Resume, resume_id)
-    if resume is None or resume.user_id != current_user.id:
-        raise AppException(404, 40403, "resume not found")
+    resume = get_user_formal_resume(db, current_user, resume_id)
     files = [Path(version.file_path) for version in resume.versions if version.file_path]
     db.delete(resume)
+    db.flush()
+    ensure_default_resume(db, current_user.id)
     db.commit()
     for path in files:
         if path.exists() and UPLOAD_ROOT.resolve() in path.resolve().parents:
             path.unlink()
     return success_response(message="resume deleted")
+
+
+@router.patch("/{resume_id}/default", response_model=ApiResponse[dict])
+def set_default_resume(
+    resume_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict]:
+    resume = get_user_formal_resume(db, current_user, resume_id)
+    make_default_resume(db, current_user, resume)
+    db.commit()
+    db.refresh(resume)
+    return success_response(_resume_summary(resume), message="default resume updated")
 
 
 @router.post("/audit", response_model=ApiResponse[ResumeAuditResult])
@@ -212,9 +229,7 @@ def audit_resume(
 ) -> ApiResponse[ResumeAuditResult]:
     resume_id = payload.resume_id
     if resume_id is not None:
-        resume = db.get(Resume, resume_id)
-        if resume is None or resume.user_id != current_user.id:
-            raise AppException(404, 40403, "resume not found")
+        get_user_formal_resume(db, current_user, resume_id)
 
     with agent_operation_log(
         db,

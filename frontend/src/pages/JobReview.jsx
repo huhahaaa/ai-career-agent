@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Check, RefreshCw, X } from 'lucide-react';
 import { getJobs, rebuildApprovedJobIndex, updateJobStatus } from '../api/client';
 
 export default function JobReview() {
@@ -45,7 +46,10 @@ export default function JobReview() {
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div className="toolbar">
-        <button className="btn btn-outline" onClick={handleReindex}>更新已审核岗位索引</button>
+        <button className="btn btn-outline" onClick={handleReindex}>
+          <RefreshCw size={16} />
+          更新已审核岗位索引
+        </button>
       </div>
 
       <div className="card">
@@ -72,8 +76,14 @@ export default function JobReview() {
                   {j.source_link && <a href={j.source_link} target="_blank" rel="noreferrer">查看岗位来源</a>}
                 </div>
                 <div className="review-card-actions">
-                  <button className="btn btn-sm btn-success" onClick={() => handleAction(j.id, 'approved')}>✅ 通过</button>
-                  <button className="btn btn-sm btn-danger" onClick={() => handleAction(j.id, 'rejected')}>❌ 驳回</button>
+                  <button className="btn btn-sm btn-success" onClick={() => handleAction(j.id, 'approved')}>
+                    <Check size={15} />
+                    通过
+                  </button>
+                  <button className="btn btn-sm btn-danger" onClick={() => handleAction(j.id, 'rejected')}>
+                    <X size={15} />
+                    驳回
+                  </button>
                 </div>
               </div>
             ))}

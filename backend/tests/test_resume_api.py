@@ -47,6 +47,38 @@ def test_resume_upload_list_detail_and_delete(client):
     assert final_list.json()["data"] == []
 
 
+def test_resume_default_can_be_changed(client):
+    headers = register_and_login(client)
+    first = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={"file": ("backend.txt", b"Python FastAPI SQL project", "text/plain")},
+    ).json()["data"]
+    second = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={"file": ("frontend.txt", b"React TypeScript UI project", "text/plain")},
+    ).json()["data"]
+
+    initial_list = client.get("/api/v1/resumes", headers=headers)
+    set_default = client.patch(
+        "/api/v1/resumes/%s/default" % second["id"],
+        headers=headers,
+    )
+    updated_list = client.get("/api/v1/resumes", headers=headers)
+
+    assert first["is_default"] is True
+    assert second["is_default"] is False
+    assert initial_list.json()["data"][1]["is_default"] is True
+    assert set_default.status_code == 200
+    defaults = [
+        item["id"]
+        for item in updated_list.json()["data"]
+        if item["is_default"]
+    ]
+    assert defaults == [second["id"]]
+
+
 def test_resume_upload_rejects_unsupported_file_type(client):
     headers = register_and_login(client)
 

@@ -6,7 +6,12 @@ from app.api.v1.endpoints import matching as matching_endpoint
 from app.core.security import hash_password
 from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
-from app.models.resume import Resume, ResumeVersion
+from app.models.resume import (
+    RESUME_SOURCE_FORMAL,
+    RESUME_SOURCE_MATCHING_SNAPSHOT,
+    Resume,
+    ResumeVersion,
+)
 from app.models.user import User
 from app.services.matching import enrich_match_results
 from app.services.vector_store import VectorStoreUnavailable
@@ -276,11 +281,90 @@ def test_matching_run_persists_history_for_database_jobs(
     assert history.json()["data"][0]["details"]["missing_skills"] == ["Docker"]
 
     with session_factory() as db:
-        assert len(db.scalars(select(Resume)).all()) == 1
+        resumes = db.scalars(select(Resume)).all()
+        assert len(resumes) == 1
+        assert resumes[0].source_type == RESUME_SOURCE_MATCHING_SNAPSHOT
         assert len(db.scalars(select(ResumeVersion)).all()) == 1
         records = db.scalars(select(MatchingRecord)).all()
         assert len(records) == 1
         assert records[0].job_id == job_id
+
+
+def test_matching_can_use_existing_formal_resume_without_creating_snapshot(
+    client,
+    session_factory,
+    monkeypatch,
+):
+    headers = register_and_login(client)
+    with session_factory() as db:
+        user = db.scalar(select(User).where(User.username == "matching-user"))
+        resume = Resume(
+            user_id=user.id,
+            title="formal resume",
+            current_version_number=1,
+            source_type=RESUME_SOURCE_FORMAL,
+            is_default=True,
+        )
+        job = JobPosting(
+            title="Python Backend Intern",
+            company="Example Inc",
+            location="Hangzhou",
+            publish_time="2026-07-24",
+            skills='["Python", "FastAPI"]',
+            source_link="https://example.com/jobs/formal-resume-match",
+            status="approved",
+            audit_comment="verified",
+        )
+        db.add_all([resume, job])
+        db.flush()
+        db.add(
+            ResumeVersion(
+                resume_id=resume.id,
+                version_number=1,
+                file_name="formal.txt",
+                file_path="",
+                content="Python FastAPI selected resume",
+            )
+        )
+        db.commit()
+        resume_id = resume.id
+        job_id = job.id
+
+    calls = []
+    monkeypatch.setattr(
+        matching_endpoint,
+        "match_resume_to_jobs",
+        lambda resume_text, *_args, **_kwargs: calls.append(resume_text)
+        or [
+            {
+                "job_id": str(job_id),
+                "title": "Python Backend Intern",
+                "company": "Example Inc",
+                "score": 90,
+                "reason": "selected resume",
+                "source_link": "https://example.com/jobs/formal-resume-match",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/v1/matching/run",
+        headers=headers,
+        json={
+            "resume_id": resume_id,
+            "resume_text": "Manual text should be ignored",
+            "target_position": "Python 后端实习生",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == ["Python FastAPI selected resume"]
+    with session_factory() as db:
+        resumes = db.scalars(select(Resume)).all()
+        records = db.scalars(select(MatchingRecord)).all()
+        assert len(resumes) == 1
+        assert resumes[0].source_type == RESUME_SOURCE_FORMAL
+        assert records[0].resume_id == resume_id
 
 
 def test_matching_history_backfills_skill_gap_for_legacy_records(

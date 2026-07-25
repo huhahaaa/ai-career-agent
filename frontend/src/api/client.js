@@ -118,12 +118,12 @@ const mockDashboard = {
   total_resumes: 1,
   total_jobs: mockJobs.length,
   total_interviews: 0,
-  avg_score: 0,
+  avg_score: null,
   recent_interviews: [],
   skill_distribution: [{ name: 'Python', level: 80 }, { name: 'React', level: 72 }],
   job_skill_requirements: [{ skill: 'Python', count: 8 }, { skill: 'React', count: 6 }],
   capability_gap: [{ subject: 'Python', personal: 80, required: 75 }],
-  multi_job_scores: [{ job: '示例科技(前端)', score: 86.4, color: '#2563eb' }],
+  multi_job_scores: [{ job: '示例科技(前端)', score: 86.4, color: 'var(--chart-primary)' }],
   interview_trend: [],
   job_city_distribution: [{ name: '北京', value: 1 }, { name: '上海', value: 1 }],
 };
@@ -175,6 +175,13 @@ export function uploadResume(formData) {
 
 export function deleteResume(id) {
   return mockFallback(() => request(`/resumes/${id}`, { method: 'DELETE' }), () => null);
+}
+
+export function setDefaultResume(id) {
+  return mockFallback(
+    () => request(`/resumes/${id}/default`, { method: 'PATCH' }),
+    () => ({ id, is_default: true }),
+  );
 }
 
 export function getResumeDetail(id) {
@@ -254,11 +261,19 @@ export function getMatches() {
   return mockFallback(() => request('/matching/history'), () => mockMatches);
 }
 
-export function runMatching(resumeText, targetPosition = '', topK = 5) {
+export function runMatching(resumeText, targetPosition = '', topK = 5, resumeId = null) {
+  const payload = {
+    resume_text: resumeText,
+    target_position: targetPosition,
+    top_k: topK,
+  };
+  if (resumeId) {
+    payload.resume_id = Number(resumeId);
+  }
   return mockFallback(
     () => request('/matching/run', {
       method: 'POST',
-      body: JSON.stringify({ resume_text: resumeText, target_position: targetPosition, top_k: topK }),
+      body: JSON.stringify(payload),
     }),
     () => ({ matches: mockMatches }),
   );
@@ -270,19 +285,24 @@ export function rebuildApprovedJobIndex() {
 
 export function startInterview({
   resumeText,
+  resumeId = null,
   targetPosition = '',
   targetJobId = null,
   interviewMode = '技术面',
 }) {
+  const payload = {
+    resume_text: resumeText,
+    target_position: targetPosition,
+    target_job_id: targetJobId,
+    interview_mode: interviewMode,
+  };
+  if (resumeId) {
+    payload.resume_id = Number(resumeId);
+  }
   return mockFallback(
     () => request('/interviews/start', {
       method: 'POST',
-      body: JSON.stringify({
-        resume_text: resumeText,
-        target_position: targetPosition,
-        target_job_id: targetJobId,
-        interview_mode: interviewMode,
-      }),
+      body: JSON.stringify(payload),
     }),
     () => ({
       session_id: `mock-${Date.now()}`,

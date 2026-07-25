@@ -15,8 +15,8 @@ export default function RadarChart({ data = [], height = 300 }) {
         <Radar
           name="评分"
           dataKey="value"
-          stroke="#6366f1"
-          fill="#6366f1"
+          stroke="var(--chart-primary)"
+          fill="var(--chart-primary)"
           fillOpacity={0.2}
         />
       </RechartsRadar>

@@ -12,9 +12,17 @@ from app.models.agent_log import AgentLog
 from app.models.interview import InterviewSession
 from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
-from app.models.resume import Resume, ResumeAuditReport, ResumeVersion
+from app.models.resume import RESUME_SOURCE_FORMAL, Resume, ResumeAuditReport
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
+from app.services.interview_summary import (
+    dashboard_interview_summary,
+    is_effective_interview_session,
+)
+from app.services.resume_selection import (
+    current_resume_version,
+    get_default_resume,
+)
 router = APIRouter()
 
 SKILL_KEYWORDS = [
@@ -71,14 +79,21 @@ def _top_job_skills(jobs: list[JobPosting], limit: int = 8) -> list[dict]:
     ]
 
 
-def _user_skill_distribution(db: Session, user_id: int) -> list[dict]:
-    versions = db.scalars(
-        select(ResumeVersion)
-        .join(Resume)
-        .where(Resume.user_id == user_id)
-        .order_by(ResumeVersion.created_at.desc(), ResumeVersion.id.desc())
-    ).all()
-    text = "\n".join(version.content or "" for version in versions)
+def _resume_profile(resume: Resume | None) -> dict | None:
+    if resume is None:
+        return None
+    version = current_resume_version(resume)
+    return {
+        "id": resume.id,
+        "filename": version.file_name if version else resume.title,
+        "version": resume.current_version_number,
+        "is_default": bool(resume.is_default),
+    }
+
+
+def _user_skill_distribution(resume: Resume | None) -> list[dict]:
+    version = current_resume_version(resume) if resume is not None else None
+    text = version.content or "" if version is not None else ""
     lowered = text.lower()
     skills = []
     for keyword in SKILL_KEYWORDS:
@@ -121,29 +136,13 @@ def _job_city_distribution(jobs: list[JobPosting]) -> list[dict]:
 
 
 def _recent_interviews(sessions: list[InterviewSession]) -> list[dict]:
-    rows = []
-    for session in sessions[:5]:
-        rows.append(
-            {
-                "id": session.id,
-                "company": session.target_job.company if session.target_job else "目标岗位",
-                "job_title": (
-                    session.target_job.title if session.target_job else "综合面试"
-                ),
-                "mode": "Agent 模拟面试",
-                "score": session.score or 0,
-                "duration_minutes": 0,
-                "status": session.status,
-                "created_at": session.created_at,
-            }
-        )
-    return rows
+    return [dashboard_interview_summary(session) for session in sessions[:5]]
 
 
 def _interview_trend(sessions: list[InterviewSession]) -> list[dict]:
     rows = []
     for index, session in enumerate(reversed(sessions[-10:]), start=1):
-        if session.score is None:
+        if session.score is None or not is_effective_interview_session(session):
             continue
         label = session.created_at.strftime("%m-%d") if session.created_at else str(index)
         rows.append({"date": label, "score": session.score, "index": index})
@@ -199,19 +198,25 @@ def dashboard(
         select(func.count())
         .select_from(Resume)
         .where(Resume.user_id == current_user.id)
+        .where(Resume.source_type == RESUME_SOURCE_FORMAL)
     ) or 0
     current_user_sessions = db.scalars(
         select(InterviewSession)
         .where(InterviewSession.user_id == current_user.id)
         .order_by(InterviewSession.created_at.desc(), InterviewSession.id.desc())
     ).all()
+    effective_sessions = [
+        session
+        for session in current_user_sessions
+        if is_effective_interview_session(session)
+    ]
     scored_sessions = [
-        session for session in current_user_sessions if session.score is not None
+        session for session in effective_sessions if session.score is not None
     ]
     avg_score = (
-        round(sum(session.score or 0 for session in scored_sessions) / len(scored_sessions), 1)
+        round(sum(session.score for session in scored_sessions) / len(scored_sessions), 1)
         if scored_sessions
-        else 0
+        else None
     )
     matching_records = db.scalars(
         select(MatchingRecord)
@@ -219,20 +224,22 @@ def dashboard(
         .order_by(MatchingRecord.created_at.desc(), MatchingRecord.id.desc())
     ).all()
     required_skills = _top_job_skills(jobs)
-    personal_skills = _user_skill_distribution(db, current_user.id)
+    default_resume = get_default_resume(db, current_user)
+    personal_skills = _user_skill_distribution(default_resume)
 
     return success_response(
         {
             "total_resumes": current_user_resumes_count,
+            "active_resume": _resume_profile(default_resume),
             "total_jobs": len(jobs),
-            "total_interviews": len(current_user_sessions),
+            "total_interviews": len(effective_sessions),
             "avg_score": avg_score,
-            "recent_interviews": _recent_interviews(current_user_sessions),
+            "recent_interviews": _recent_interviews(effective_sessions),
             "skill_distribution": personal_skills,
             "job_skill_requirements": required_skills,
             "capability_gap": _capability_gap(personal_skills, required_skills),
             "multi_job_scores": _multi_job_scores(matching_records),
-            "interview_trend": _interview_trend(current_user_sessions),
+            "interview_trend": _interview_trend(effective_sessions),
             "job_city_distribution": _job_city_distribution(jobs),
             "agent_call_count": db.scalar(
                 select(func.count())

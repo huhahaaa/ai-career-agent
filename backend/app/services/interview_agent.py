@@ -13,7 +13,6 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from uuid import uuid4
 
@@ -21,6 +20,13 @@ from app.core.config import settings
 from app.services.job_data import (
     get_position_job_summary,
     get_position_responsibilities,
+)
+from app.services.interview_question_bank import (
+    _POSITION_QUESTIONS,
+    get_position_question_pool,
+    get_question_bank_summary,
+    load_question_bank,
+    normalize_position,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,19 +36,6 @@ _client: Any = None
 # ── interview mode constants ──────────────────────────────────────────
 INTERVIEW_MODES = frozenset({"HR面", "技术面", "压力面", "反馈教练"})
 DEFAULT_INTERVIEW_MODE = "技术面"
-
-# ── target position buckets (需求 #14：按岗位生成不同题库) ──────────────
-# 课程项目覆盖的六类岗位，面试出题与题库会据此区分。
-DEFAULT_POSITIONS = ["前端", "后端", "产品", "运营", "算法", "数媒"]
-# 自由文本岗位 -> 标准岗位的归一化映射（支持中英文/别称）。
-POSITION_KEYWORDS = {
-    "前端": ["前端", "frontend", "fe", "web", "h5"],
-    "后端": ["后端", "back-end", "backend", "be", "服务端", "服务器"],
-    "产品": ["产品", "pm", "product"],
-    "运营": ["运营", "operation", "ops", "growth"],
-    "算法": ["算法", "algorithm", "ai", "机器学习", "深度学习", "nlp", "cv", "推荐"],
-    "数媒": ["数媒", "数字媒体", "新媒体", "影视", "交互", "游戏", "动画", "设计"],
-}
 
 # ── technology keyword bank ───────────────────────────────────────────
 TECH_KEYWORDS = [
@@ -115,82 +108,6 @@ DIMENSION_CN_NAMES = {
     "star_completeness": "STAR完整度",
     "position_match": "岗位匹配度",
 }
-
-# ── question bank loader ──────────────────────────────────────────────
-_QUESTION_BANK: Optional[List[Dict[str, Any]]] = None
-_POSITION_QUESTIONS: Dict[str, List[Dict[str, str]]] = {}
-_QUESTION_BANK_PATH = Path(__file__).resolve().parents[3] / "data" / "interview_question_bank.json"
-
-
-def load_question_bank() -> List[Dict[str, Any]]:
-    """加载面试题库 JSON（通用题库 + 六岗位专属题库），缓存结果以避免重复读取。"""
-    global _QUESTION_BANK, _POSITION_QUESTIONS
-    if _QUESTION_BANK is not None:
-        return _QUESTION_BANK
-    try:
-        content = _QUESTION_BANK_PATH.read_text(encoding="utf-8")
-        data = json.loads(content)
-        _QUESTION_BANK = data.get("questions", [])
-        _POSITION_QUESTIONS = data.get("position_banks", {}) or {}
-        logger.info(
-            "Loaded %d questions and %d position banks from question bank",
-            len(_QUESTION_BANK),
-            len(_POSITION_QUESTIONS),
-        )
-    except Exception as exc:
-        logger.warning("Failed to load question bank: %s", exc)
-        _QUESTION_BANK = []
-        _POSITION_QUESTIONS = {}
-    return _QUESTION_BANK
-
-
-def _normalize_position(target_position: str) -> str:
-    """将自由文本岗位归一化为标准岗位桶，匹配不到返回空串。"""
-    if not target_position:
-        return ""
-    lowered = target_position.lower()
-    for standard, aliases in POSITION_KEYWORDS.items():
-        for alias in aliases:
-            if alias.lower() in lowered:
-                return standard
-    return ""
-
-
-def get_question_bank_summary() -> Dict[str, Any]:
-    """获取题库摘要信息，供报告引用（含按岗位分类统计）。"""
-    questions = load_question_bank()
-    if not questions:
-        return {
-            "total": 0,
-            "modes": {},
-            "difficulties": {},
-            "categories": [],
-            "positions": {},
-            "position_bank_count": 0,
-        }
-    modes: Dict[str, int] = {}
-    difficulties: Dict[str, int] = {}
-    categories: set = set()
-    positions: Dict[str, int] = {pos: 0 for pos in DEFAULT_POSITIONS}
-    for q in questions:
-        mode = q.get("mode", "未知")
-        modes[mode] = modes.get(mode, 0) + 1
-        diff = q.get("difficulty", "unknown")
-        difficulties[diff] = difficulties.get(diff, 0) + 1
-        cat = q.get("category")
-        if cat:
-            categories.add(cat)
-        for pos in q.get("positions", []):
-            if pos in positions:
-                positions[pos] += 1
-    return {
-        "total": len(questions),
-        "modes": modes,
-        "difficulties": difficulties,
-        "categories": sorted(categories),
-        "positions": positions,
-        "position_bank_count": len(_POSITION_QUESTIONS),
-    }
 
 
 def _llm_enabled() -> bool:
@@ -294,6 +211,43 @@ BIASED_PHRASES = [
 ]
 # 注意：不使用“最/第一”等短词，避免误命中“最后/最初/第一轮”等正常表述。
 
+# 题目要点覆盖规则。LLM 负责生成追问文本，规则层先兜住“是否答到题目问点”。
+QUESTION_REQUIREMENT_RULES = [
+    {
+        "question_any": ["为什么", "感兴趣", "动机", "选择", "应聘"],
+        "answer_any": [
+            "因为", "感兴趣", "选择", "希望", "想", "适合", "喜欢",
+            "发展", "成长", "方向", "动机", "规划", "目标",
+        ],
+        "hint": "说明你为什么对这个岗位或方向感兴趣",
+    },
+    {
+        "question_all": ["价值"],
+        "question_any": ["后端", "技术", "平台", "系统", "业务", "项目"],
+        "answer_any": [
+            "价值", "作用", "支撑", "稳定", "可靠", "安全", "效率",
+            "自动化", "闭环", "基础", "核心", "复用", "扩展", "保障",
+        ],
+        "hint": "说明该岗位或技术在业务系统中的价值",
+    },
+    {
+        "question_any": ["如何", "怎么", "实现", "设计", "方案", "流程", "优化", "排查"],
+        "answer_any": [
+            "使用", "通过", "设计", "实现", "流程", "接口", "数据库",
+            "缓存", "日志", "测试", "优化", "指标", "分层", "封装",
+        ],
+        "hint": "补充具体技术动作、流程或实现细节",
+    },
+    {
+        "question_any": ["结果", "效果", "成果", "提升", "优化", "量化", "指标"],
+        "answer_any": [
+            "%", "秒", "分钟", "次", "个", "降低", "提升", "减少",
+            "增加", "覆盖", "响应时间", "通过率", "错误率",
+        ],
+        "hint": "补充可验证的结果或量化指标",
+    },
+]
+
 
 def _detect_expression_risks(text: str) -> "tuple[List[str], List[str]]":
     """识别空泛表达与夸大/绝对化表达，返回 (vague_flags, biased_flags)。"""
@@ -318,8 +272,54 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def should_followup(answer: str) -> bool:
+def _contains_any_keyword(text: str, keywords: List[str]) -> bool:
+    lowered = text.lower()
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def _question_matches_rule(question: str, rule: Dict[str, Any]) -> bool:
+    lowered = question.lower()
+    question_all = rule.get("question_all") or []
+    question_any = rule.get("question_any") or []
+    if question_all and not all(keyword.lower() in lowered for keyword in question_all):
+        return False
+    if question_any and not _contains_any_keyword(question, question_any):
+        return False
+    return bool(question_all or question_any)
+
+
+def _missing_question_requirements(question: str, answer: str) -> List[str]:
+    """Return hints for question requirements not covered by the answer."""
+    missing: List[str] = []
+    stripped_question = (question or "").strip()
+    stripped_answer = (answer or "").strip()
+    if not stripped_question or not stripped_answer:
+        return missing
+
+    for rule in QUESTION_REQUIREMENT_RULES:
+        if not _question_matches_rule(stripped_question, rule):
+            continue
+        answer_keywords = rule.get("answer_any") or []
+        if not _contains_any_keyword(stripped_answer, answer_keywords):
+            hint = str(rule["hint"])
+            if hint not in missing:
+                missing.append(hint)
+    return missing
+
+
+def _join_feedback(existing: Any, extra: str, limit: int) -> str:
+    existing_text = str(existing or "").strip("；; ")
+    if existing_text:
+        text = f"{existing_text}；{extra}"
+    else:
+        text = extra
+    return _strip_markdown(text)[:limit]
+
+
+def should_followup(answer: str, question: str = "") -> bool:
     stripped = answer.strip()
+    if question and _missing_question_requirements(question, stripped):
+        return True
     if len(stripped) < 50:
         return True
     if not _contains_tech_keywords(stripped):
@@ -373,7 +373,7 @@ def start_interview(
         "created_at": time.time(),
     }
 
-    position_bucket = _normalize_position(target_position) if target_position else ""
+    position_bucket = normalize_position(target_position) if target_position else ""
     return {
         "session_id": agent_state["session_uuid"],
         "interview_mode": interview_mode,
@@ -415,19 +415,25 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
 
     if not first_answer:
         slot["first_answer"] = answer
-        if should_followup(answer):
+        missing_requirements = _missing_question_requirements(questions[idx], answer)
+        if should_followup(answer, question=questions[idx]):
             followup = _generate_followup(
                 question=questions[idx],
                 answer=answer,
                 target_position=state.get("target_position", ""),
                 interview_mode=interview_mode,
+                missing_requirements=missing_requirements,
             )
             slot["followup_question"] = followup
+            if missing_requirements:
+                feedback = "回答与题目要点覆盖不足：%s。需要补充追问。" % "；".join(missing_requirements)
+            else:
+                feedback = "回答还不够具体，需要补充追问。"
             return {
                 "is_followup": True,
                 "followup_question": followup,
                 "score": None,
-                "feedback": "回答还不够具体，需要补充追问。",
+                "feedback": feedback,
                 "dimension_scores": None,
                 "next_question": followup,
                 "current_index": idx,
@@ -619,7 +625,7 @@ def _analyze_job_requirements(
     job_id: Optional[Union[int, str]] = None,
 ) -> str:
     mode_hint = _mode_analysis_hint(interview_mode)
-    position_bucket = _normalize_position(target_position)
+    position_bucket = normalize_position(target_position)
     real_summary = get_position_job_summary(position_bucket, job_id)
     prompt = f"""目标岗位：{target_position}
 面试模式：{interview_mode}
@@ -654,7 +660,7 @@ def _generate_questions(
     position = target_position or "目标岗位"
     default_questions = _default_questions(position, interview_mode)
 
-    position_bucket = _normalize_position(target_position)
+    position_bucket = normalize_position(target_position)
     real_resp = get_position_responsibilities(position_bucket, job_id)
     # 以真实岗位职责题为主（最多 6 道），首题保留为模式专属开场，不足 8 道用默认题补足
     grounded = [
@@ -784,20 +790,10 @@ def _mode_scoring_hint(interview_mode: str) -> str:
 
 
 def _default_questions(position: str = "", interview_mode: str = DEFAULT_INTERVIEW_MODE) -> List[str]:
-    load_question_bank()
     target = position or "目标岗位"
-    normalized = _normalize_position(position)
-    # 优先使用岗位专属题库（需求 #14：针对岗位生成不同题库）
-    if normalized and normalized in _POSITION_QUESTIONS:
-        pool = [
-            item["question"]
-            for item in _POSITION_QUESTIONS[normalized]
-            if item.get("mode") == interview_mode
-        ]
-        if not pool:
-            pool = [item["question"] for item in _POSITION_QUESTIONS[normalized]]
-        if pool:
-            return pool[:8]
+    position_questions = get_position_question_pool(position, interview_mode)
+    if position_questions:
+        return position_questions[:8]
     mode_questions = {
         "HR面": [
             "请做一个简短的自我介绍，重点说明你的职业规划和个人优势。",
@@ -848,19 +844,27 @@ def _generate_followup(
     answer: str,
     target_position: str,
     interview_mode: str = DEFAULT_INTERVIEW_MODE,
+    missing_requirements: Optional[List[str]] = None,
 ) -> str:
     tone = _mode_followup_tone(interview_mode)
+    missing_text = "；".join(missing_requirements or [])
+    if missing_text:
+        focus_line = f"候选人漏答的题目要点：{missing_text}\n请优先围绕这些漏答点追问。"
+        fallback = f"你刚才的回答还没有回应题目中的这些要点：{missing_text}。请补充说明。"
+    else:
+        focus_line = "候选人的回答不够具体。"
+        fallback = "能具体说一下你用了什么技术、承担了哪部分工作，以及取得了什么量化成果吗？"
     prompt = f"""原问题：{question}
 候选人回答：{answer}
 目标岗位：{target_position}
 面试模式：{interview_mode}
 
-候选人的回答不够具体。{tone}
+{focus_line}{tone}
 只输出追问本身，不超过 80 字。"""
     return _safe_call_llm(
         system_prompt=f"你是{interview_mode}的面试官。追问要{tone}",
         user_prompt=prompt,
-        fallback="能具体说一下你用了什么技术、承担了哪部分工作，以及取得了什么量化成果吗？",
+        fallback=fallback,
         temperature=0.5,
     )
 
@@ -938,6 +942,7 @@ def _score_answer(
 
     # 规则兜底修正 + 表达风险识别（需求 #15）。
     scores = _apply_score_rules(scores, answer.strip())
+    scores = _apply_question_relevance_rules(scores, question, answer.strip())
 
     # 评分校准（进阶 #2）：对照 Agent(LLM) 评分与纯规则评分，辅助评估 Agent 稳定性。
     base_total = sum(
@@ -946,6 +951,7 @@ def _score_answer(
     )
     scores["llm_score"] = base_total if _llm_enabled() else None
     rule_only = _apply_score_rules(dict(DEFAULT_DIMENSION_SCORES), answer.strip())
+    rule_only = _apply_question_relevance_rules(rule_only, question, answer.strip())
     scores["rule_score"] = rule_only["total"]
     return scores
 
@@ -1000,6 +1006,36 @@ def _apply_score_rules(scores: Dict[str, Any], answer: str) -> Dict[str, Any]:
         )
     corrected["vague_flags"] = vague
     corrected["biased_flags"] = biased
+    corrected["total"] = sum(corrected[key] for key in DIMENSION_MAX)
+    return corrected
+
+
+def _apply_question_relevance_rules(
+    scores: Dict[str, Any],
+    question: str,
+    answer: str,
+) -> Dict[str, Any]:
+    corrected = dict(scores)
+    missing_requirements = _missing_question_requirements(question, answer)
+    corrected["missing_question_requirements"] = missing_requirements
+
+    if not missing_requirements:
+        corrected["total"] = sum(corrected[key] for key in DIMENSION_MAX)
+        return corrected
+
+    missing_text = "；".join(missing_requirements)
+    corrected["content_relevance"] = min(corrected["content_relevance"], 12)
+    corrected["clarity"] = min(corrected["clarity"], 14)
+    corrected["issues"] = _join_feedback(
+        corrected.get("issues"),
+        f"回答与题目要点覆盖不足，漏答：{missing_text}",
+        200,
+    )
+    corrected["improvement_suggestions"] = _join_feedback(
+        corrected.get("improvement_suggestions"),
+        f"先逐项回应题目要求，再展开项目细节：{missing_text}",
+        300,
+    )
     corrected["total"] = sum(corrected[key] for key in DIMENSION_MAX)
     return corrected
 

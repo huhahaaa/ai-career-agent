@@ -11,7 +11,7 @@ from app.core.exceptions import AppException
 from app.db.session import get_db
 from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
-from app.models.resume import Resume, ResumeVersion
+from app.models.resume import RESUME_SOURCE_MATCHING_SNAPSHOT, Resume
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.matching import (
@@ -28,6 +28,11 @@ from app.services.matching import (
 )
 from app.services.vector_store import VectorStoreUnavailable
 from app.services.vector_store import clear_job_embeddings
+from app.services.resume_selection import (
+    create_resume_snapshot,
+    get_user_formal_resume,
+    resume_current_text,
+)
 
 router = APIRouter()
 
@@ -85,6 +90,24 @@ def _matching_resume_text(record: MatchingRecord) -> str:
     return version.content or ""
 
 
+def _resolve_matching_resume(
+    db: Session,
+    user: User,
+    payload: MatchRequest,
+) -> tuple[str, Resume | None]:
+    if payload.resume_id is not None:
+        resume = get_user_formal_resume(db, user, payload.resume_id)
+        resume_text = resume_current_text(resume).strip()
+        if len(resume_text) < 10:
+            raise AppException(422, 42205, "selected resume has no usable text")
+        return resume_text, resume
+
+    resume_text = (payload.resume_text or "").strip()
+    if not resume_text:
+        raise AppException(422, 42206, "resume_text or resume_id is required")
+    return resume_text, None
+
+
 def _matching_record_details(record: MatchingRecord) -> dict:
     try:
         details = json.loads(record.details or "{}")
@@ -126,6 +149,8 @@ def _save_matching_records(
     user: User,
     payload: MatchRequest,
     matches: List[dict],
+    resume_text: str,
+    selected_resume: Resume | None = None,
 ) -> None:
     persisted_matches = []
     for match in matches:
@@ -140,21 +165,13 @@ def _save_matching_records(
     if not persisted_matches:
         return
 
-    resume = Resume(
-        user_id=user.id,
-        title=payload.target_position or "岗位匹配简历快照",
-        current_version_number=1,
-    )
-    db.add(resume)
-    db.flush()
-    db.add(
-        ResumeVersion(
-            resume_id=resume.id,
-            version_number=1,
-            file_name="matching-input.txt",
-            file_path="",
-            content=payload.resume_text,
-        )
+    resume = selected_resume or create_resume_snapshot(
+        db,
+        user,
+        title="岗位匹配简历快照",
+        file_name="matching-input.txt",
+        content=resume_text,
+        source_type=RESUME_SOURCE_MATCHING_SNAPSHOT,
     )
     for job, match in persisted_matches:
         db.add(
@@ -190,15 +207,23 @@ def run_matching(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[MatchResponse]:
+    resume_text, selected_resume = _resolve_matching_resume(db, current_user, payload)
     try:
         matches = match_resume_to_jobs(
-            payload.resume_text,
+            resume_text,
             payload.target_position,
             payload.top_k,
         )
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
-    _save_matching_records(db, current_user, payload, matches)
+    _save_matching_records(
+        db,
+        current_user,
+        payload,
+        matches,
+        resume_text,
+        selected_resume,
+    )
     return success_response(MatchResponse(matches=matches))
 
 

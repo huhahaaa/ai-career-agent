@@ -17,157 +17,24 @@ import {
   Cell,
 } from 'recharts';
 import { getJobs, getMatches } from '../api/client';
+import {
+  appendApprovedJobOptions,
+  defaultSelection,
+  formatScore,
+  normalizeHistoryRecord,
+  normalizeImmediateMatch,
+  normalizeJob,
+  scoreColor,
+} from '../utils/jobComparison';
 
-const COLORS = ['#2563eb', '#06b6d4', '#f59e0b', '#ef4444', '#22c55e', '#8b5cf6'];
-const SOURCE_MISSING_VALUES = new Set(['未标注', '页面未标注']);
-
-function formatDisclosure(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '未填写';
-  return SOURCE_MISSING_VALUES.has(raw) ? '原页面未公开' : raw;
-}
-
-function parseSalaryRange(value) {
-  const raw = String(value || '').trim();
-  const normalizedRaw = raw.toLowerCase();
-  const label = formatDisclosure(raw);
-  if (!raw || SOURCE_MISSING_VALUES.has(raw)) {
-    return { min: 0, max: 0, label, comparable: false };
-  }
-  if (/\/?\s*(hour|hr)|小时|时薪/.test(normalizedRaw)) {
-    return { min: 0, max: 0, label, comparable: false };
-  }
-
-  const numbers = Array.from(raw.matchAll(/\d+(?:\.\d+)?/g)).map(match => Number(match[0]));
-  if (!numbers.length) return { min: 0, max: 0, label, comparable: false };
-
-  const hasK = /k/i.test(raw);
-  const hasMonth = /month|月/.test(normalizedRaw);
-  const hasYear = /year|yr|年/.test(normalizedRaw);
-  const hasWanYear = /万/.test(raw) && hasYear;
-  let monthlyKValues = [];
-
-  if (hasWanYear) {
-    monthlyKValues = numbers.map(item => item * 10 / 12);
-  } else if (hasK && hasYear && !hasMonth) {
-    monthlyKValues = numbers.map(item => item / 12);
-  } else if (hasK) {
-    monthlyKValues = numbers;
-  } else if (hasMonth) {
-    monthlyKValues = numbers.map(item => item / 1000);
-  } else if (hasYear) {
-    monthlyKValues = numbers.map(item => item / 12 / 1000);
-  } else {
-    return { min: 0, max: 0, label, comparable: false };
-  }
-
-  const min = Number(Math.min(...monthlyKValues).toFixed(2));
-  const max = Number(Math.max(...monthlyKValues).toFixed(2));
-  return { min, max, label: raw, comparable: true };
-}
-
-function formatScore(score) {
-  return typeof score === 'number' ? `${Math.round(score)} 分` : '未运行匹配';
-}
-
-function scoreColor(score) {
-  if (typeof score !== 'number') return '#64748b';
-  return score >= 80 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
-}
-
-function normalizeJob(job, index, match = null) {
-  const salary = parseSalaryRange(job.salary_range);
-  const score = typeof match?.total_score === 'number'
-    ? match.total_score
-    : typeof match?.score === 'number'
-      ? match.score
-      : null;
-
-  return {
-    id: job.id ?? match?.job_id ?? `job-${index}`,
-    seriesKey: `job_${job.id ?? match?.job_id ?? index}`,
-    title: job.title || match?.job_title || '未命名岗位',
-    company: job.company || match?.company || '未知公司',
-    city: job.location || job.city || '未填写',
-    salary_min: salary.min,
-    salary_max: salary.max,
-    salary_label: salary.label,
-    salary_comparable: salary.comparable,
-    experience: formatDisclosure(job.experience),
-    education: formatDisclosure(job.education),
-    skills_required: job.skills || job.skills_required || [],
-    source_link: job.source_link || match?.details?.source_link || '',
-    match_score: score,
-    reason: match?.details?.reason || match?.reason || '',
-    matched_skills: match?.details?.matched_skills || match?.matched_skills || [],
-    missing_skills: match?.details?.missing_skills || match?.missing_skills || [],
-    gap_analysis: match?.details?.gap_analysis || match?.gap_analysis || '',
-    suggestion: match?.details?.suggestion || match?.suggestion || '',
-    created_at: match?.created_at || '',
-    from_history: Boolean(match),
-  };
-}
-
-function normalizeHistoryRecord(record, jobs, index) {
-  const job = jobs.find(item => String(item.id) === String(record.job_id)) || {};
-  return normalizeJob(
-    {
-      ...job,
-      id: record.job_id,
-      title: job.title || record.job_title,
-      company: job.company || record.company,
-    },
-    index,
-    record,
-  );
-}
-
-function normalizeImmediateMatch(match, index, jobs = []) {
-  const job = jobs.find(item => String(item.id) === String(match.job_id)) || {};
-  return normalizeJob(
-    {
-      ...job,
-      id: match.job_id,
-      title: job.title || match.title,
-      company: job.company || match.company,
-      source_link: job.source_link || match.source_link,
-      skills: job.skills || match.skills || [],
-    },
-    index,
-    {
-      ...match,
-      total_score: Math.round(match.score || 0),
-      details: {
-        reason: match.reason,
-        source_link: match.source_link,
-        matched_skills: match.matched_skills || [],
-        missing_skills: match.missing_skills || [],
-        gap_analysis: match.gap_analysis || '',
-        suggestion: match.suggestion || '',
-      },
-    },
-  );
-}
-
-function appendApprovedJobOptions(rows, approvedJobs) {
-  const existingIds = new Set(rows.map(row => String(row.id)));
-  const options = [...rows];
-
-  (approvedJobs || []).forEach(job => {
-    if (existingIds.has(String(job.id))) return;
-    existingIds.add(String(job.id));
-    options.push(normalizeJob(job, options.length));
-  });
-
-  return options;
-}
-
-function defaultSelection(rows, preferredSelectedCount = 0) {
-  if (preferredSelectedCount > 0) {
-    return rows.map((_, index) => index < Math.min(preferredSelectedCount, 3));
-  }
-  return rows.map((_, index) => index < 3);
-}
+const COLORS = [
+  'var(--chart-primary)',
+  'var(--chart-secondary)',
+  'var(--chart-warning)',
+  'var(--chart-danger)',
+  'var(--chart-success)',
+  'var(--chart-violet)',
+];
 
 export default function JobComparison() {
   const location = useLocation();
@@ -377,8 +244,8 @@ export default function JobComparison() {
                     <YAxis />
                     <Tooltip formatter={value => `${Number(value).toFixed(1)}K/月`} />
                     <Legend />
-                    <Bar dataKey="salary_min" name="最低月薪(K)" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="salary_max" name="最高月薪(K)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="salary_min" name="最低月薪(K)" fill="var(--chart-primary)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="salary_max" name="最高月薪(K)" fill="var(--chart-secondary)" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (

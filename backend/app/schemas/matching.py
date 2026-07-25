@@ -1,10 +1,11 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 
 class MatchRequest(BaseModel):
-    resume_text: str = Field(min_length=1)
+    resume_text: str = ""
+    resume_id: Optional[int] = None
     target_position: str = ""
     top_k: int = Field(default=5, ge=1, le=20)
 

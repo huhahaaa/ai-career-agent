@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 
 
 class InterviewStartRequest(BaseModel):
-    resume_text: str = Field(..., min_length=10)
+    resume_text: str = ""
+    resume_id: Optional[int] = None
     target_job_id: Optional[Union[int, str]] = None
     target_position: str = ""
     interview_mode: str = "技术面"

@@ -1,262 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Camera, Mic, MicOff, VideoOff } from 'lucide-react';
-import { endInterview, sendMessage, startInterview } from '../api/client';
+import { endInterview, getResumeDetail, getResumes, sendMessage, startInterview } from '../api/client';
 import RadarChart from '../components/RadarChart';
 import { mapDimensionScores } from '../utils/dimensionLabels';
 
-const SPEECH_PAUSE_THRESHOLD_MS = 1500;
-const VISION_SAMPLE_INTERVAL_MS = 250;
-const BRIGHTNESS_SAMPLE_INTERVAL_MS = 1500;
-const VISION_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
-const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-const POSE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
-const INTERVIEW_MODES = ['技术面', 'HR面', '压力面', '反馈教练'];
-
-const defaultVisionAnalysis = {
-  faceDetected: false,
-  poseDetected: false,
-  gazeLabel: '未检测',
-  headPoseLabel: '未检测',
-  postureLabel: '未检测',
-  attentionLabel: '待检测',
-  attentionScore: 0,
-  headTilt: 0,
-  shoulderTilt: 0,
-  torsoOffset: 0,
-  advice: ['开启摄像头后，视线和姿态会自动分析。'],
-  lastUpdated: '',
-};
-
-function countSpeechUnits(text) {
-  const chineseChars = text.match(/[\u4e00-\u9fa5]/g)?.length || 0;
-  const latinWords = text.match(/[A-Za-z0-9_]+/g)?.length || 0;
-  return chineseChars + latinWords;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function distance(a, b) {
-  return Math.hypot((a?.x || 0) - (b?.x || 0), (a?.y || 0) - (b?.y || 0));
-}
-
-function midpoint(a, b) {
-  if (!a || !b) return null;
-  return {
-    x: (a.x + b.x) / 2,
-    y: (a.y + b.y) / 2,
-    z: ((a.z ?? 0) + (b.z ?? 0)) / 2,
-  };
-}
-
-function averagePoint(points) {
-  const validPoints = points.filter(Boolean);
-  if (!validPoints.length) return null;
-  const total = validPoints.reduce(
-    (acc, point) => {
-      acc.x += point.x;
-      acc.y += point.y;
-      acc.z += point.z ?? 0;
-      return acc;
-    },
-    { x: 0, y: 0, z: 0 },
-  );
-  return {
-    x: total.x / validPoints.length,
-    y: total.y / validPoints.length,
-    z: total.z / validPoints.length,
-  };
-}
-
-function analyzeGaze(faceLandmarks) {
-  const eyeSpecs = [
-    { corners: [33, 133], iris: [468, 469, 470, 471, 472] },
-    { corners: [362, 263], iris: [473, 474, 475, 476, 477] },
-  ];
-
-  const ratios = eyeSpecs
-    .map(({ corners, iris }) => {
-      const cornerA = faceLandmarks[corners[0]];
-      const cornerB = faceLandmarks[corners[1]];
-      const irisCenter = averagePoint(iris.map(index => faceLandmarks[index]));
-      if (!cornerA || !cornerB || !irisCenter) return null;
-
-      const minX = Math.min(cornerA.x, cornerB.x);
-      const maxX = Math.max(cornerA.x, cornerB.x);
-      const width = Math.max(0.001, maxX - minX);
-      return clamp((irisCenter.x - minX) / width, 0, 1);
-    })
-    .filter(value => value !== null);
-
-  let average = 0.5;
-  let source = 'iris';
-
-  if (ratios.length) {
-    average = ratios.reduce((sum, value) => sum + value, 0) / ratios.length;
-  } else {
-    const leftEye = faceLandmarks[33];
-    const rightEye = faceLandmarks[263];
-    const nose = faceLandmarks[1] || faceLandmarks[4];
-    if (!leftEye || !rightEye || !nose) {
-      return { label: '未检测', average, source: 'unknown' };
-    }
-    const eyeMid = midpoint(leftEye, rightEye);
-    const eyeDistance = Math.max(distance(leftEye, rightEye), 0.001);
-    average = clamp(0.5 + ((nose.x - eyeMid.x) * 2.2) / eyeDistance, 0, 1);
-    source = 'fallback';
-  }
-
-  if (average < 0.38) {
-    return { label: '偏左', average, source };
-  }
-  if (average > 0.62) {
-    return { label: '偏右', average, source };
-  }
-  return { label: '居中', average, source };
-}
-
-function analyzeHeadPose(faceLandmarks) {
-  const leftEye = faceLandmarks[33];
-  const rightEye = faceLandmarks[263];
-  const nose = faceLandmarks[1] || faceLandmarks[4] || faceLandmarks[168];
-
-  if (!leftEye || !rightEye || !nose) {
-    return { label: '未检测', roll: 0, yaw: 0, pitch: 0 };
-  }
-
-  const eyeMid = midpoint(leftEye, rightEye);
-  const eyeDistance = Math.max(distance(leftEye, rightEye), 0.001);
-  const roll = (Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x) * 180) / Math.PI;
-  const yaw = (nose.x - eyeMid.x) / eyeDistance;
-  const pitch = (nose.y - eyeMid.y) / eyeDistance;
-
-  let label = '正对';
-  if (Math.abs(roll) > 10) {
-    label = roll > 0 ? '头部右倾' : '头部左倾';
-  } else if (yaw < -0.13) {
-    label = '偏左';
-  } else if (yaw > 0.13) {
-    label = '偏右';
-  } else if (pitch > 0.18) {
-    label = '低头';
-  } else if (pitch < -0.05) {
-    label = '抬头';
-  }
-
-  return { label, roll, yaw, pitch };
-}
-
-function analyzePosture(poseLandmarks) {
-  const leftShoulder = poseLandmarks[11];
-  const rightShoulder = poseLandmarks[12];
-  const leftHip = poseLandmarks[23];
-  const rightHip = poseLandmarks[24];
-
-  if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) {
-    return { label: '未检测', shoulderTilt: 0, hipTilt: 0, torsoOffset: 0, leanAngle: 0 };
-  }
-
-  const shoulderMid = midpoint(leftShoulder, rightShoulder);
-  const hipMid = midpoint(leftHip, rightHip);
-  const torsoDistance = Math.max(distance(shoulderMid, hipMid), 0.001);
-  const shoulderTilt = (Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x) * 180) / Math.PI;
-  const hipTilt = (Math.atan2(rightHip.y - leftHip.y, rightHip.x - leftHip.x) * 180) / Math.PI;
-  const torsoOffset = (shoulderMid.x - hipMid.x) / torsoDistance;
-  const leanAngle = (Math.atan2(shoulderMid.x - hipMid.x, hipMid.y - shoulderMid.y) * 180) / Math.PI;
-
-  let label = '坐姿端正';
-  if (Math.abs(shoulderTilt) > 9) {
-    label = shoulderTilt > 0 ? '右肩偏高' : '左肩偏高';
-  } else if (Math.abs(torsoOffset) > 0.12) {
-    label = torsoOffset > 0 ? '身体偏右' : '身体偏左';
-  } else if (Math.abs(leanAngle) > 9) {
-    label = leanAngle > 0 ? '上身右倾' : '上身左倾';
-  }
-
-  return { label, shoulderTilt, hipTilt, torsoOffset, leanAngle };
-}
-
-function buildVisionAdvice({ faceDetected, poseDetected, gazeLabel, headPoseLabel, postureLabel }) {
-  const advice = [];
-
-  if (!faceDetected) {
-    advice.push('请让脸部完整进入摄像头画面，并尽量保持正对镜头。');
-  } else {
-    if (gazeLabel !== '居中') {
-      advice.push('请把视线拉回镜头附近，减少频繁看向两侧。');
-    }
-    if (headPoseLabel !== '正对') {
-      advice.push('请保持头部端正，避免明显歪头或低头。');
-    }
-  }
-
-  if (!poseDetected) {
-    advice.push('请让上半身也进入画面，方便分析姿态。');
-  } else if (postureLabel !== '坐姿端正') {
-    advice.push('请把肩膀放平，坐姿尽量稳定。');
-  }
-
-  if (!advice.length) {
-    advice.push('当前视线和姿态较稳定，可以继续面试。');
-  }
-
-  return advice.slice(0, 3);
-}
-
-function buildAttentionScore({ faceDetected, poseDetected, gazeLabel, headPoseLabel, postureLabel }) {
-  if (!faceDetected) return 0;
-
-  let score = 100;
-  if (gazeLabel !== '居中') score -= 18;
-  if (headPoseLabel !== '正对') score -= 16;
-  if (poseDetected && postureLabel !== '坐姿端正') score -= 14;
-  if (!poseDetected) score -= 8;
-  return clamp(Math.round(score), 0, 100);
-}
-
-function buildVisionAnalysis(faceResult, poseResult) {
-  const faceLandmarks = faceResult?.faceLandmarks?.[0] || [];
-  const poseLandmarks = poseResult?.poseLandmarks?.[0] || [];
-  const faceDetected = faceLandmarks.length > 0;
-  const poseDetected = poseLandmarks.length > 0;
-  const gaze = faceDetected ? analyzeGaze(faceLandmarks) : { label: '未检测', average: 0.5, source: 'unknown' };
-  const headPose = faceDetected ? analyzeHeadPose(faceLandmarks) : { label: '未检测', roll: 0, yaw: 0, pitch: 0 };
-  const posture = poseDetected ? analyzePosture(poseLandmarks) : { label: '未检测', shoulderTilt: 0, hipTilt: 0, torsoOffset: 0, leanAngle: 0 };
-  const attentionScore = buildAttentionScore({
-    faceDetected,
-    poseDetected,
-    gazeLabel: gaze.label,
-    headPoseLabel: headPose.label,
-    postureLabel: posture.label,
-  });
-
-  return {
-    faceDetected,
-    poseDetected,
-    gazeLabel: gaze.label,
-    headPoseLabel: headPose.label,
-    postureLabel: posture.label,
-    attentionLabel: attentionScore >= 85 ? '良好' : attentionScore >= 70 ? '正常' : attentionScore >= 50 ? '需调整' : '注意',
-    attentionScore,
-    headTilt: Number(headPose.roll.toFixed(1)),
-    shoulderTilt: Number(posture.shoulderTilt.toFixed(1)),
-    torsoOffset: Number(posture.torsoOffset.toFixed(2)),
-    advice: buildVisionAdvice({
-      faceDetected,
-      poseDetected,
-      gazeLabel: gaze.label,
-      headPoseLabel: headPose.label,
-      postureLabel: posture.label,
-    }),
-    lastUpdated: new Date().toLocaleTimeString(),
-  };
-}
+import {
+  BRIGHTNESS_SAMPLE_INTERVAL_MS,
+  FACE_MODEL_URL,
+  INTERVIEW_MODES,
+  POSE_MODEL_URL,
+  SPEECH_PAUSE_THRESHOLD_MS,
+  VISION_SAMPLE_INTERVAL_MS,
+  VISION_WASM_URL,
+  buildVisionAnalysis,
+  countSpeechUnits,
+  defaultVisionAnalysis,
+} from '../utils/interviewMediaAnalysis';
 
 export default function MockInterview() {
   const location = useLocation();
   const [resumeText, setResumeText] = useState(location.state?.resumeText || '');
+  const [resumes, setResumes] = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState(location.state?.resumeId ? String(location.state.resumeId) : '');
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [targetPosition, setTargetPosition] = useState(location.state?.targetPosition || '');
   const [interviewMode, setInterviewMode] = useState(location.state?.interviewMode || '技术面');
   const [messages, setMessages] = useState([]);
@@ -276,6 +43,8 @@ export default function MockInterview() {
   const [visionAnalysis, setVisionAnalysis] = useState(defaultVisionAnalysis);
   const [listening, setListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
+  const [speechStatus, setSpeechStatus] = useState('未启动');
+  const [micLevel, setMicLevel] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [speechStats, setSpeechStats] = useState({
     durationSeconds: 0,
@@ -290,6 +59,9 @@ export default function MockInterview() {
   const brightnessTimerRef = useRef(null);
   const analysisFrameRef = useRef(null);
   const recognitionRef = useRef(null);
+  const microphoneStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const audioLevelFrameRef = useRef(null);
   const listeningRef = useRef(false);
   const speechStartedAtRef = useRef(null);
   const lastSpeechAtRef = useRef(null);
@@ -305,6 +77,33 @@ export default function MockInterview() {
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    getResumes()
+      .then(data => {
+        const list = data || [];
+        setResumes(list);
+        const defaultResume = list.find(item => item.is_default) || list[0];
+        if (!selectedResumeId && defaultResume && !resumeText.trim()) {
+          setSelectedResumeId(String(defaultResume.id));
+        }
+      })
+      .catch(() => setResumes([]));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedResumeId) return;
+    setResumeLoading(true);
+    setError('');
+    getResumeDetail(selectedResumeId)
+      .then(detail => {
+        const versions = detail?.versions || [];
+        const version = versions[versions.length - 1];
+        setResumeText(version?.content || '');
+      })
+      .catch(error => setError(error.message || '简历正文加载失败'))
+      .finally(() => setResumeLoading(false));
+  }, [selectedResumeId]);
 
   useEffect(() => () => {
     stopSpeechRecognition();
@@ -332,6 +131,62 @@ export default function MockInterview() {
       pauseCount: pauseCountRef.current,
       longestPauseSeconds: Number((longestPauseMsRef.current / 1000).toFixed(1)),
     });
+  };
+
+  const stopMicrophoneLevel = () => {
+    if (audioLevelFrameRef.current) {
+      window.cancelAnimationFrame(audioLevelFrameRef.current);
+      audioLevelFrameRef.current = null;
+    }
+    microphoneStreamRef.current?.getTracks().forEach(track => track.stop());
+    microphoneStreamRef.current = null;
+    audioContextRef.current?.close?.().catch(() => {});
+    audioContextRef.current = null;
+    setMicLevel(0);
+  };
+
+  const startMicrophoneLevel = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setSpeechStatus('浏览器不支持麦克风权限检测');
+      return;
+    }
+
+    stopMicrophoneLevel();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    microphoneStreamRef.current = stream;
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) {
+      setSpeechStatus('已取得麦克风权限，但无法读取音量');
+      return;
+    }
+
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    audioContextRef.current = audioContext;
+    const data = new Uint8Array(analyser.fftSize);
+
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (let index = 0; index < data.length; index += 1) {
+        const centered = data[index] - 128;
+        sum += centered * centered;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const nextLevel = Math.min(100, Math.round(rms * 6));
+      setMicLevel(nextLevel);
+      if (nextLevel > 6 && listeningRef.current) {
+        setSpeechStatus(current => (
+          current.includes('转写') || current.includes('写入') ? current : '麦克风有输入，等待转写结果'
+        ));
+      }
+      audioLevelFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    tick();
   };
 
   const analyzeBrightness = () => {
@@ -508,15 +363,26 @@ export default function MockInterview() {
     setVisionAnalysis(defaultVisionAnalysis);
   };
 
-  const startSpeechRecognition = () => {
+  const startSpeechRecognition = async () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setSpeechSupported(false);
+      setSpeechStatus('当前浏览器不支持语音识别');
       setError('当前浏览器不支持语音识别，请使用 Chrome 或 Edge。');
       return;
     }
 
     setSpeechSupported(true);
+    setError('');
+    setSpeechStatus('正在请求麦克风权限...');
+    try {
+      await startMicrophoneLevel();
+    } catch (permissionError) {
+      setSpeechStatus('麦克风权限不可用');
+      setError(permissionError.message || '麦克风权限被拒绝或设备不可用');
+      return;
+    }
+
     setInterimTranscript('');
     speechStartedAtRef.current = Date.now();
     lastSpeechAtRef.current = null;
@@ -530,6 +396,22 @@ export default function MockInterview() {
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setSpeechStatus('正在监听，请开始说话');
+    };
+
+    recognition.onaudiostart = () => {
+      setSpeechStatus('检测到麦克风输入');
+    };
+
+    recognition.onspeechstart = () => {
+      setSpeechStatus('检测到讲话，正在转写');
+    };
+
+    recognition.onspeechend = () => {
+      setSpeechStatus('讲话结束，等待转写结果');
+    };
 
     recognition.onresult = event => {
       let finalText = '';
@@ -557,20 +439,42 @@ export default function MockInterview() {
       }
 
       setInterimTranscript(interimText.trim());
+      setSpeechStatus(finalText.trim() ? '已写入回答框' : interimText.trim() ? '正在转写' : '正在监听');
       updateSpeechStats();
     };
 
+    recognition.onnomatch = () => {
+      setSpeechStatus('没有识别到明确内容');
+    };
+
     recognition.onerror = event => {
-      setError(`语音识别异常：${event.error || 'unknown'}`);
+      const messages = {
+        'no-speech': '没有检测到讲话，请靠近麦克风或提高音量',
+        'audio-capture': '没有检测到可用麦克风',
+        'not-allowed': '麦克风权限被拒绝',
+        'service-not-allowed': '浏览器语音识别服务不可用',
+        network: '语音识别网络服务不可用',
+        aborted: '语音识别已中断',
+      };
+      const message = messages[event.error] || `语音识别异常：${event.error || 'unknown'}`;
+      setSpeechStatus(message);
+      setError(message);
+      if (['not-allowed', 'service-not-allowed', 'audio-capture'].includes(event.error)) {
+        listeningRef.current = false;
+        setListening(false);
+        stopMicrophoneLevel();
+      }
     };
 
     recognition.onend = () => {
       if (listeningRef.current) {
         try {
+          setSpeechStatus('识别暂停，正在重新监听');
           recognition.start();
         } catch {
           listeningRef.current = false;
           setListening(false);
+          setSpeechStatus('语音识别已停止');
         }
       }
     };
@@ -583,13 +487,21 @@ export default function MockInterview() {
     } catch (requestError) {
       listeningRef.current = false;
       setListening(false);
+      stopMicrophoneLevel();
+      setSpeechStatus('语音识别启动失败');
       setError(requestError.message || '语音识别启动失败');
     }
   };
 
   const stopSpeechRecognition = () => {
+    const pendingTranscript = interimTranscript.trim();
+    if (pendingTranscript) {
+      speechUnitsRef.current += countSpeechUnits(pendingTranscript);
+      setInput(current => `${current}${current ? ' ' : ''}${pendingTranscript}`);
+    }
     listeningRef.current = false;
     setListening(false);
+    setSpeechStatus('已停止');
     setInterimTranscript('');
     try {
       recognitionRef.current?.stop();
@@ -597,6 +509,7 @@ export default function MockInterview() {
       // Ignore repeated stop calls from browser recognition implementations.
     }
     recognitionRef.current = null;
+    stopMicrophoneLevel();
     updateSpeechStats();
   };
 
@@ -611,6 +524,7 @@ export default function MockInterview() {
     try {
       const result = await startInterview({
         resumeText: resumeText.trim(),
+        resumeId: selectedResumeId || null,
         targetPosition: targetPosition.trim(),
         targetJobId: location.state?.targetJobId || null,
         interviewMode,
@@ -721,12 +635,29 @@ export default function MockInterview() {
               </select>
             </div>
             <div className="form-group form-group-full">
+              <label>使用已有简历</label>
+              <select
+                value={selectedResumeId}
+                onChange={event => setSelectedResumeId(event.target.value)}
+              >
+                <option value="">手动粘贴简历文本</option>
+                {resumes.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.is_default ? '默认 - ' : ''}{item.filename}（v{item.version}）
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group form-group-full">
               <label>简历文本 *</label>
               <textarea
                 value={resumeText}
-                onChange={event => setResumeText(event.target.value)}
+                onChange={event => {
+                  setResumeText(event.target.value);
+                  if (selectedResumeId) setSelectedResumeId('');
+                }}
                 rows={10}
-                placeholder="粘贴简历文本"
+                placeholder={resumeLoading ? '正在加载简历正文...' : '粘贴简历文本'}
               />
             </div>
             <div className="form-group form-group-full form-actions">
@@ -812,11 +743,16 @@ export default function MockInterview() {
 
           {!speechSupported && <div className="assist-warning">当前浏览器不支持语音识别</div>}
           <div className="assist-metrics voice-metrics">
+            <span>状态：{speechStatus}</span>
+            <span>麦克风：{micLevel > 6 ? '有输入' : listening ? '等待声音' : '未启动'}</span>
             <span>时长：{speechStats.durationSeconds}s</span>
             <span>字数：{speechStats.units}</span>
             <span>语速：{speechStats.rate} 字/分钟</span>
             <span>停顿：{speechStats.pauseCount} 次</span>
             <span>最长停顿：{speechStats.longestPauseSeconds}s</span>
+          </div>
+          <div className="mic-level" aria-label="麦克风音量">
+            <div className="mic-level-bar" style={{ width: `${micLevel}%` }} />
           </div>
           <div className="interim-transcript">
             {interimTranscript || '语音转写会自动填入回答框'}
@@ -826,6 +762,9 @@ export default function MockInterview() {
 
       <div className="chat-container">
         <div className="chat-messages">
+          {messages.length === 0 && (
+            <div className="empty">当前面试题目未显示，请刷新页面后重新开始一次面试。</div>
+          )}
           {messages.map((message, index) => (
             <div key={`${message.timestamp}-${index}`} className={`chat-message ${message.role}`}>
               <div className="chat-bubble">
