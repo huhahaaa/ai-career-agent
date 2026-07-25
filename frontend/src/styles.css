@@ -289,6 +289,100 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
   display: flex; align-items: center; justify-content: space-between;
   padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border);
 }
+.interview-assist-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.assist-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.assist-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.assist-card-header h3 {
+  margin-bottom: 2px;
+  font-size: 1rem;
+}
+.assist-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: #92400e;
+  font-size: .85rem;
+}
+.assist-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.assist-metrics span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: .8rem;
+}
+.vision-advice {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: .85rem;
+  line-height: 1.6;
+}
+.camera-preview {
+  position: relative;
+  min-height: 180px;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: #0f172a;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #cbd5e1;
+  font-size: .9rem;
+}
+.camera-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+.camera-preview.active {
+  border-style: solid;
+}
+.voice-metrics {
+  margin-bottom: 12px;
+}
+.interim-transcript {
+  min-height: 68px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: .9rem;
+  line-height: 1.7;
+}
+.btn svg {
+  flex-shrink: 0;
+}
 .chat-container { flex: 1; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .chat-message { display: flex; gap: 12px; animation: fadeIn .3s ease; }
@@ -409,4 +503,5 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
   .toolbar { flex-wrap: wrap; }
   .table { font-size: .8rem; }
   .table th, .table td { padding: 8px 10px; }
+  .interview-assist-panel { grid-template-columns: 1fr; }
 }
