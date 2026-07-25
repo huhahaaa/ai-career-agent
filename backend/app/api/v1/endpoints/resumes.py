@@ -27,15 +27,57 @@ def _latest_version(resume: Resume) -> ResumeVersion | None:
     return resume.versions[-1] if resume.versions else None
 
 
+def _latest_report(resume: Resume) -> ResumeAuditReport | None:
+    if not resume.audit_reports:
+        return None
+    return max(resume.audit_reports, key=lambda report: report.id or 0)
+
+
+def _load_json_list(value: str) -> list:
+    if not value:
+        return []
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _risk_level(score: int, risk_flags: list) -> str:
+    if score < 50 or len(risk_flags) >= 5:
+        return "高"
+    if score < 70 or len(risk_flags) >= 2:
+        return "中"
+    return "低"
+
+
+def _audit_report_to_response(report: ResumeAuditReport) -> dict:
+    risk_flags = _load_json_list(report.risk_flags)
+    suggestions = _load_json_list(report.suggestions)
+    return {
+        "id": report.id,
+        "score": report.score,
+        "risk_flags": risk_flags,
+        "suggestions": suggestions,
+        "missing_keywords": _load_json_list(report.missing_keywords),
+        "risk_level": _risk_level(report.score, risk_flags),
+        "created_at": report.created_at,
+    }
+
+
 def _resume_summary(resume: Resume) -> dict:
     latest = _latest_version(resume)
-    latest_report = resume.audit_reports[-1] if resume.audit_reports else None
+    latest_report = _latest_report(resume)
     return {
         "id": resume.id,
         "filename": latest.file_name if latest else resume.title,
         "version": resume.current_version_number,
         "status": "approved" if latest_report else "pending",
-        "review_comment": "已生成审核报告" if latest_report else "已保存，等待审核",
+        "review_comment": (
+            "已生成审核报告，综合评分 %s 分" % latest_report.score
+            if latest_report
+            else "已保存，等待审核"
+        ),
         "created_at": resume.created_at,
     }
 
@@ -113,6 +155,7 @@ def resume_detail(
     resume = db.get(Resume, resume_id)
     if resume is None or resume.user_id != current_user.id:
         raise AppException(404, 40403, "resume not found")
+    latest_report = _latest_report(resume)
     return success_response(
         {
             **_resume_summary(resume),
@@ -125,6 +168,19 @@ def resume_detail(
                     "created_at": version.created_at,
                 }
                 for version in resume.versions
+            ],
+            "latest_report": (
+                _audit_report_to_response(latest_report)
+                if latest_report is not None
+                else None
+            ),
+            "audit_reports": [
+                _audit_report_to_response(report)
+                for report in sorted(
+                    resume.audit_reports,
+                    key=lambda item: item.id or 0,
+                    reverse=True,
+                )
             ],
         }
     )
@@ -183,6 +239,10 @@ def audit_resume(
             score=result["score"],
             risk_flags=json.dumps(result["risk_flags"], ensure_ascii=False),
             suggestions=json.dumps(result["suggestions"], ensure_ascii=False),
+            missing_keywords=json.dumps(
+                result.get("missing_keywords", []),
+                ensure_ascii=False,
+            ),
         )
     )
     db.commit()

@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from app.api.v1.endpoints import resumes as resumes_endpoint
 from app.models.resume import ResumeAuditReport
 
 
@@ -75,6 +76,8 @@ def test_resume_text_audit_is_persisted(client, session_factory):
     assert response.json()["data"]["score"] >= 60
     assert response.json()["data"]["risk_level"] in {"低", "中", "高"}
     assert response.json()["data"]["risk_flags"]
+    assert "pytest" in response.json()["data"]["missing_keywords"]
+    assert "JWT" in response.json()["data"]["missing_keywords"]
     with session_factory() as db:
         reports = db.scalars(select(ResumeAuditReport)).all()
         assert len(reports) == 1
@@ -100,10 +103,61 @@ def test_resume_audit_can_attach_to_uploaded_resume(client, session_factory):
         },
     )
     list_response = client.get("/api/v1/resumes", headers=headers)
+    detail_response = client.get("/api/v1/resumes/%s" % resume_id, headers=headers)
 
     assert audit.status_code == 200
     assert list_response.json()["data"][0]["status"] == "approved"
+    assert detail_response.status_code == 200
+    latest_report = detail_response.json()["data"]["latest_report"]
+    assert latest_report["score"] == audit.json()["data"]["score"]
+    assert latest_report["risk_level"] in {"低", "中", "高"}
+    assert detail_response.json()["data"]["audit_reports"][0]["id"] == latest_report["id"]
     with session_factory() as db:
         reports = db.scalars(select(ResumeAuditReport)).all()
         assert len(reports) == 1
         assert reports[0].resume_id == resume_id
+
+
+def test_resume_missing_keywords_are_persisted(client, monkeypatch):
+    headers = register_and_login(client)
+    upload = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={"file": ("resume.txt", b"Python FastAPI SQL project", "text/plain")},
+    )
+    resume_id = upload.json()["data"]["id"]
+
+    monkeypatch.setattr(
+        resumes_endpoint,
+        "audit_resume_text",
+        lambda *_args, **_kwargs: {
+            "score": 82,
+            "risk_flags": [],
+            "suggestions": ["补充缓存和部署实践。"],
+            "missing_keywords": ["Redis", "Docker", "接口性能优化"],
+            "risk_level": "低",
+        },
+    )
+
+    audit = client.post(
+        "/api/v1/resumes/audit",
+        headers=headers,
+        json={
+            "resume_id": resume_id,
+            "resume_text": "Python FastAPI SQL project with backend API design.",
+            "target_position": "Python 后端工程师",
+        },
+    )
+    detail = client.get("/api/v1/resumes/%s" % resume_id, headers=headers)
+
+    assert audit.status_code == 200
+    assert audit.json()["data"]["missing_keywords"] == [
+        "Redis",
+        "Docker",
+        "接口性能优化",
+    ]
+    assert detail.json()["data"]["latest_report"]["missing_keywords"] == [
+        "Redis",
+        "Docker",
+        "接口性能优化",
+    ]

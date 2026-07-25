@@ -177,6 +177,26 @@ export function getResumeDetail(id) {
   return mockFallback(() => request(`/resumes/${id}`), () => null);
 }
 
+export function auditResume({ resumeId = null, resumeText, targetPosition = '' }) {
+  return mockFallback(
+    () => request('/resumes/audit', {
+      method: 'POST',
+      body: JSON.stringify({
+        resume_id: resumeId,
+        resume_text: resumeText,
+        target_position: targetPosition,
+      }),
+    }),
+    () => ({
+      score: 76,
+      risk_flags: resumeText.length < 80 ? ['简历内容偏短，项目经历支撑不足。'] : [],
+      suggestions: ['补充项目背景、个人职责、技术动作和量化结果。'],
+      missing_keywords: targetPosition ? ['缓存', '部署', '接口性能优化'] : [],
+      risk_level: '中',
+    }),
+  );
+}
+
 export function getJobs(params = {}) {
   return mockFallback(
     () => {
@@ -227,7 +247,7 @@ export async function batchImportJobs(data) {
 }
 
 export function getMatches() {
-  return USE_MOCK ? Promise.resolve(mockMatches) : unavailable('匹配结果历史');
+  return mockFallback(() => request('/matching/history'), () => mockMatches);
 }
 
 export function runMatching(resumeText, targetPosition = '', topK = 5) {

@@ -24,8 +24,8 @@ export default function ResumeUpload() {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type) && !file.name.match(/\.(pdf|doc|docx)$/i)) {
-      setMsg({ type: 'error', text: '仅支持PDF/DOC/DOCX格式' });
+    if (!file.name.match(/\.(pdf|doc|docx|txt|md)$/i)) {
+      setMsg({ type: 'error', text: '仅支持 PDF / DOC / DOCX / TXT / MD 格式' });
       return;
     }
     setUploading(true);
@@ -78,11 +78,11 @@ export default function ResumeUpload() {
       <div className="card">
         <div className="upload-area">
           <label className="upload-label">
-            <input type="file" accept=".pdf,.doc,.docx" onChange={handleUpload} disabled={uploading} hidden />
+              <input type="file" accept=".pdf,.doc,.docx,.txt,.md" onChange={handleUpload} disabled={uploading} hidden />
             <div className="upload-box">
               <span className="upload-icon">📁</span>
               <p>{uploading ? '上传中...' : '点击或拖拽上传简历'}</p>
-              <span className="upload-hint">支持 PDF / DOC / DOCX 格式</span>
+              <span className="upload-hint">支持 PDF / DOC / DOCX / TXT / MD，TXT/MD 可直接用于真实审核</span>
             </div>
           </label>
         </div>
