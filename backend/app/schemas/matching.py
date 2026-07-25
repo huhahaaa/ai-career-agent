@@ -28,6 +28,7 @@ class JobIndexResult(BaseModel):
 
 
 class BatchIndexResult(BaseModel):
+    deleted_count: int = 0
     indexed_count: int
     skipped_count: int
     job_ids: List[str]

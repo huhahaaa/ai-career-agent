@@ -26,6 +26,7 @@ from app.services.matching import (
     match_resume_to_jobs,
 )
 from app.services.vector_store import VectorStoreUnavailable
+from app.services.vector_store import clear_job_embeddings
 
 router = APIRouter()
 
@@ -181,7 +182,9 @@ def index_all_approved_jobs(
         .order_by(JobPosting.id)
     ).all()
     try:
+        clear_result = clear_job_embeddings()
         result = index_approved_jobs(job_to_vector_payload(job) for job in jobs)
+        result["deleted_count"] = clear_result["deleted_count"]
     except VectorStoreUnavailable as exc:
         raise _vector_service_error(exc) from exc
     return success_response(BatchIndexResult.model_validate(result))

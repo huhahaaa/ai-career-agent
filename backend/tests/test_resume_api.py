@@ -60,6 +60,22 @@ def test_resume_upload_rejects_unsupported_file_type(client):
     assert response.json()["code"] == 42202
 
 
+def test_non_text_resume_upload_does_not_create_fake_auditable_content(client):
+    headers = register_and_login(client)
+
+    upload = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={"file": ("resume.pdf", b"%PDF-1.4 fake content", "application/pdf")},
+    )
+    resume_id = upload.json()["data"]["id"]
+    detail_response = client.get("/api/v1/resumes/%s" % resume_id, headers=headers)
+
+    assert upload.status_code == 200
+    assert detail_response.status_code == 200
+    assert detail_response.json()["data"]["versions"][0]["content"] == ""
+
+
 def test_resume_text_audit_is_persisted(client, session_factory):
     headers = register_and_login(client)
 

@@ -34,7 +34,13 @@ export default function ResumeUpload() {
       const fd = new FormData();
       fd.append('file', file);
       await uploadResume(fd);
-      setMsg({ type: 'success', text: '上传成功，正在解析中...' });
+      const canAuditDirectly = /\.(txt|md)$/i.test(file.name);
+      setMsg({
+        type: 'success',
+        text: canAuditDirectly
+          ? '上传成功，可在简历审核页生成真实审核结果。'
+          : '上传成功；当前仅保存文件，PDF/DOC/DOCX 正文解析待接入，暂不能直接审核。',
+      });
       load();
     } catch (error) {
       setMsg({

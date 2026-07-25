@@ -1,9 +1,11 @@
 from sqlalchemy import select
 
 from app.api.v1.endpoints import matching as matching_endpoint
+from app.core.security import hash_password
 from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
 from app.models.resume import Resume, ResumeVersion
+from app.models.user import User
 from app.services.vector_store import VectorStoreUnavailable
 
 
@@ -82,6 +84,63 @@ def test_student_cannot_rebuild_vector_index(client):
 
     assert response.status_code == 403
     assert response.json()["code"] == 40301
+
+
+def test_rebuild_vector_index_clears_stale_vectors_first(
+    client,
+    session_factory,
+    monkeypatch,
+):
+    with session_factory() as db:
+        db.add(
+            User(
+                username="matching-reviewer",
+                email="matching-reviewer@example.com",
+                hashed_password=hash_password("password123"),
+                role="reviewer",
+            )
+        )
+        db.add(
+            JobPosting(
+                title="Python Backend Intern",
+                company="Example Inc",
+                location="Hangzhou",
+                publish_time="2026-07-24",
+                skills='["Python", "FastAPI", "SQL"]',
+                source_link="https://example.com/jobs/reindex",
+                status="approved",
+            )
+        )
+        db.commit()
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "matching-reviewer", "password": "password123"},
+    )
+    headers = {
+        "Authorization": "Bearer %s"
+        % login_response.json()["data"]["access_token"]
+    }
+    calls = []
+
+    monkeypatch.setattr(
+        matching_endpoint,
+        "clear_job_embeddings",
+        lambda: calls.append("clear") or {"deleted_count": 3},
+    )
+    monkeypatch.setattr(
+        matching_endpoint,
+        "index_approved_jobs",
+        lambda jobs: calls.append(("index", list(jobs)))
+        or {"indexed_count": 1, "skipped_count": 0, "job_ids": ["1"]},
+    )
+
+    response = client.post("/api/v1/matching/index/approved", headers=headers)
+
+    assert response.status_code == 200
+    assert calls[0] == "clear"
+    assert calls[1][0] == "index"
+    assert response.json()["data"]["deleted_count"] == 3
+    assert response.json()["data"]["indexed_count"] == 1
 
 
 def test_matching_run_persists_history_for_database_jobs(

@@ -86,7 +86,7 @@ def _decode_uploaded_text(content: bytes, filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix in {".txt", ".md"}:
         return content.decode("utf-8", errors="ignore")
-    return "已上传文件：%s。文件解析将在后续简历解析模块接入。" % filename
+    return ""
 
 
 @router.get("", response_model=ApiResponse[List[dict]])

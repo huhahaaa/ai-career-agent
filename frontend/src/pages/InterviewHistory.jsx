@@ -23,8 +23,9 @@ export default function InterviewHistory() {
     try {
       const data = await getInterviewReport(id);
       setSelectedReport(data);
-    } catch {
-      setSelectedReport(interviews.find(i => i.id === id));
+    } catch (requestError) {
+      setError(requestError.message || '面试报告详情加载失败');
+      setSelectedReport(null);
     } finally { setReportLoading(false); }
   };
 

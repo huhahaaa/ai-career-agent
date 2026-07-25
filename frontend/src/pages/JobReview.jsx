@@ -28,7 +28,10 @@ export default function JobReview() {
   const handleReindex = async () => {
     try {
       const result = await rebuildApprovedJobIndex();
-      setMsg({ type: 'success', text: `向量索引已更新，共写入 ${result.indexed_count} 个岗位` });
+      setMsg({
+        type: 'success',
+        text: `向量索引已重建，清理 ${result.deleted_count || 0} 条旧索引，写入 ${result.indexed_count} 个岗位`,
+      });
     } catch (error) {
       setMsg({ type: 'error', text: error.message || '向量索引更新失败' });
     }

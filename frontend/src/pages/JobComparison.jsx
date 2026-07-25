@@ -29,16 +29,41 @@ function formatDisclosure(value) {
 
 function parseSalaryRange(value) {
   const raw = String(value || '').trim();
+  const normalizedRaw = raw.toLowerCase();
   const label = formatDisclosure(raw);
-  if (!raw || SOURCE_MISSING_VALUES.has(raw)) return { min: 0, max: 0, label };
+  if (!raw || SOURCE_MISSING_VALUES.has(raw)) {
+    return { min: 0, max: 0, label, comparable: false };
+  }
+  if (/\/?\s*(hour|hr)|小时|时薪/.test(normalizedRaw)) {
+    return { min: 0, max: 0, label, comparable: false };
+  }
 
   const numbers = Array.from(raw.matchAll(/\d+(?:\.\d+)?/g)).map(match => Number(match[0]));
-  if (!numbers.length) return { min: 0, max: 0, label };
+  if (!numbers.length) return { min: 0, max: 0, label, comparable: false };
 
-  const normalized = numbers.map(item => (item > 1000 ? item / 1000 : item));
-  const min = Math.min(...normalized);
-  const max = Math.max(...normalized);
-  return { min, max, label: raw };
+  const hasK = /k/i.test(raw);
+  const hasMonth = /month|月/.test(normalizedRaw);
+  const hasYear = /year|yr|年/.test(normalizedRaw);
+  const hasWanYear = /万/.test(raw) && hasYear;
+  let monthlyKValues = [];
+
+  if (hasWanYear) {
+    monthlyKValues = numbers.map(item => item * 10 / 12);
+  } else if (hasK && hasYear && !hasMonth) {
+    monthlyKValues = numbers.map(item => item / 12);
+  } else if (hasK) {
+    monthlyKValues = numbers;
+  } else if (hasMonth) {
+    monthlyKValues = numbers.map(item => item / 1000);
+  } else if (hasYear) {
+    monthlyKValues = numbers.map(item => item / 12 / 1000);
+  } else {
+    return { min: 0, max: 0, label, comparable: false };
+  }
+
+  const min = Number(Math.min(...monthlyKValues).toFixed(2));
+  const max = Number(Math.max(...monthlyKValues).toFixed(2));
+  return { min, max, label: raw, comparable: true };
 }
 
 function formatScore(score) {
@@ -67,6 +92,7 @@ function normalizeJob(job, index, match = null) {
     salary_min: salary.min,
     salary_max: salary.max,
     salary_label: salary.label,
+    salary_comparable: salary.comparable,
     experience: formatDisclosure(job.experience),
     education: formatDisclosure(job.education),
     skills_required: job.skills || job.skills_required || [],
@@ -213,11 +239,12 @@ export default function JobComparison() {
     name: `${job.company.slice(0, 4)}(${job.title.slice(0, 4)})`,
     salary_min: job.salary_min,
     salary_max: job.salary_max,
+    hasSalary: job.salary_comparable,
     match: typeof job.match_score === 'number' ? job.match_score : 0,
     hasScore: typeof job.match_score === 'number',
   }));
 
-  const salaryBarData = barData.filter(item => item.salary_min > 0 || item.salary_max > 0);
+  const salaryBarData = barData.filter(item => item.hasSalary);
   const matchBarData = barData.filter(item => item.hasScore);
   const hasSalaryData = salaryBarData.length > 0;
   const hasScoreData = matchBarData.length > 0;
@@ -310,21 +337,21 @@ export default function JobComparison() {
 
           <div className="charts-row">
             <div className="chart-card">
-              <h3>薪资范围对比</h3>
+              <h3>薪资范围对比（月薪K，未换算币种）</h3>
               {hasSalaryData ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={salaryBarData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                     <YAxis />
-                    <Tooltip formatter={value => `${value}K`} />
+                    <Tooltip formatter={value => `${Number(value).toFixed(1)}K/月`} />
                     <Legend />
-                    <Bar dataKey="salary_min" name="最低薪资(K)" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="salary_max" name="最高薪资(K)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="salary_min" name="最低月薪(K)" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="salary_max" name="最高月薪(K)" fill="#06b6d4" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="empty">当前岗位数据暂未填写薪资范围</div>
+                <div className="empty">所选岗位没有可按月薪 K 口径比较的公开薪资；时薪和未公开薪资已保留在表格中。</div>
               )}
             </div>
 

@@ -23,6 +23,13 @@ export default function Dashboard() {
   }
   if (!data) return <div className="empty">暂无数据</div>;
 
+  const skillDistribution = data.skill_distribution || [];
+  const jobSkillRequirements = data.job_skill_requirements || [];
+  const capabilityGap = data.capability_gap || [];
+  const multiJobScores = data.multi_job_scores || [];
+  const interviewTrend = data.interview_trend || [];
+  const jobCityDistribution = data.job_city_distribution || [];
+
   const stats = [
     { label: '简历数', value: data.total_resumes, icon: '📄', color: '#6366f1' },
     { label: '岗位数', value: data.total_jobs, icon: '💼', color: '#06b6d4' },
@@ -51,29 +58,37 @@ export default function Dashboard() {
       <div className="charts-row">
         <div className="chart-card">
           <h3>📊 个人技能分布</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data.skill_distribution} layout="vertical" margin={{ left: 30 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" domain={[0, 100]} />
-              <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v) => `${v}分`} />
-              <Bar dataKey="level" fill="#6366f1" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {skillDistribution.length ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={skillDistribution} layout="vertical" margin={{ left: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" domain={[0, 100]} />
+                <YAxis dataKey="name" type="category" width={80} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v) => `${v}分`} />
+                <Bar dataKey="level" fill="#6366f1" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无可统计的个人技能，请先上传并审核简历。</div>
+          )}
         </div>
 
         {/* 图表区 2: 岗位技能需求 */}
         <div className="chart-card">
           <h3>🔥 热门技能需求</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data.job_skill_requirements}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
-              <YAxis />
-              <Tooltip formatter={(v) => `${v}个岗位`} />
-              <Bar dataKey="count" fill="#06b6d4" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {jobSkillRequirements.length ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={jobSkillRequirements}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="skill" tick={{ fontSize: 11 }} />
+                <YAxis />
+                <Tooltip formatter={(v) => `${v}个岗位`} />
+                <Bar dataKey="count" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无岗位技能统计，请先导入并审核岗位。</div>
+          )}
         </div>
       </div>
 
@@ -81,35 +96,43 @@ export default function Dashboard() {
       <div className="charts-row">
         <div className="chart-card">
           <h3>🎯 个人能力 vs 岗位要求</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <RadarChart data={data.capability_gap}>
-              <PolarGrid />
-              <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
-              <PolarRadiusAxis domain={[0, 100]} />
-              <Radar name="个人水平" dataKey="personal" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
-              <Radar name="岗位要求" dataKey="required" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
-              <Legend />
-              <Tooltip />
-            </RadarChart>
-          </ResponsiveContainer>
+          {capabilityGap.length ? (
+            <ResponsiveContainer width="100%" height={350}>
+              <RadarChart data={capabilityGap}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
+                <PolarRadiusAxis domain={[0, 100]} />
+                <Radar name="个人水平" dataKey="personal" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
+                <Radar name="岗位要求" dataKey="required" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} />
+                <Legend />
+                <Tooltip />
+              </RadarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无能力差距数据，请先上传简历并准备岗位技能数据。</div>
+          )}
         </div>
 
         {/* 图表区 4: 多岗位匹配分数 */}
         <div className="chart-card">
           <h3>🏆 多岗位匹配得分</h3>
-          <ResponsiveContainer width="100%" height={350}>
-            <BarChart data={data.multi_job_scores} layout="vertical" margin={{ left: 80 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" domain={[0, 100]} />
-              <YAxis dataKey="job" type="category" width={130} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => `${v}分`} />
-              <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-                {data.multi_job_scores.map((entry, idx) => (
-                  <Cell key={idx} fill={entry.color || COLORS[idx % COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {multiJobScores.length ? (
+            <ResponsiveContainer width="100%" height={350}>
+              <BarChart data={multiJobScores} layout="vertical" margin={{ left: 80 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" domain={[0, 100]} />
+                <YAxis dataKey="job" type="category" width={130} tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v) => `${v}分`} />
+                <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                  {multiJobScores.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.color || COLORS[idx % COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无岗位匹配得分，请先运行一次岗位匹配。</div>
+          )}
         </div>
       </div>
 
@@ -117,39 +140,47 @@ export default function Dashboard() {
       <div className="charts-row">
         <div className="chart-card">
           <h3>📈 面试得分趋势</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data.interview_trend}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis domain={[0, 100]} />
-              <Tooltip formatter={(v) => `${v}分`} />
-              <Legend />
-              <Line type="monotone" dataKey="score" name="面试得分" stroke="#6366f1" strokeWidth={3} dot={{ r: 6 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          {interviewTrend.length ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={interviewTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis domain={[0, 100]} />
+                <Tooltip formatter={(v) => `${v}分`} />
+                <Legend />
+                <Line type="monotone" dataKey="score" name="面试得分" stroke="#6366f1" strokeWidth={3} dot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无面试得分趋势，请先完成一次模拟面试。</div>
+          )}
         </div>
 
         <div className="chart-card">
           <h3>🏙️ 岗位城市分布</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={data.job_city_distribution}
-                cx="50%"
-                cy="50%"
-                outerRadius={100}
-                dataKey="value"
-                nameKey="name"
-                label={({ name, value }) => `${name}: ${value}`}
-              >
-                {data.job_city_distribution.map((_, idx) => (
-                  <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v, n) => [`${v}个岗位`, n]} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
+          {jobCityDistribution.length ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={jobCityDistribution}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={100}
+                  dataKey="value"
+                  nameKey="name"
+                  label={({ name, value }) => `${name}: ${value}`}
+                >
+                  {jobCityDistribution.map((_, idx) => (
+                    <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(v, n) => [`${v}个岗位`, n]} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="empty">暂无岗位城市数据，请先导入岗位。</div>
+          )}
         </div>
       </div>
 
