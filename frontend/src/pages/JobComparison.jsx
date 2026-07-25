@@ -84,18 +84,40 @@ function normalizeHistoryRecord(record, jobs, index) {
   );
 }
 
-function normalizeImmediateMatch(match, index) {
+function normalizeImmediateMatch(match, index, jobs = []) {
+  const job = jobs.find(item => String(item.id) === String(match.job_id)) || {};
   return normalizeJob(
     {
+      ...job,
       id: match.job_id,
-      title: match.title,
-      company: match.company,
-      source_link: match.source_link,
-      skills: match.skills || [],
+      title: job.title || match.title,
+      company: job.company || match.company,
+      source_link: job.source_link || match.source_link,
+      skills: job.skills || match.skills || [],
     },
     index,
     { ...match, total_score: Math.round(match.score || 0), details: { reason: match.reason, source_link: match.source_link } },
   );
+}
+
+function appendApprovedJobOptions(rows, approvedJobs) {
+  const existingIds = new Set(rows.map(row => String(row.id)));
+  const options = [...rows];
+
+  (approvedJobs || []).forEach(job => {
+    if (existingIds.has(String(job.id))) return;
+    existingIds.add(String(job.id));
+    options.push(normalizeJob(job, options.length));
+  });
+
+  return options;
+}
+
+function defaultSelection(rows, preferredSelectedCount = 0) {
+  if (preferredSelectedCount > 0) {
+    return rows.map((_, index) => index < Math.min(preferredSelectedCount, 3));
+  }
+  return rows.map((_, index) => index < 3);
 }
 
 export default function JobComparison() {
@@ -116,26 +138,34 @@ export default function JobComparison() {
         const routeMatches = location.state?.matches || [];
 
         if (routeMatches.length) {
-          const rows = routeMatches.map(normalizeImmediateMatch);
+          const matchedRows = routeMatches.map((match, index) => normalizeImmediateMatch(match, index, approvedJobs || []));
+          const rows = appendApprovedJobOptions(matchedRows, approvedJobs);
           setCompareData(rows);
-          setDataSource('当前匹配结果');
-          setSelected(rows.map((_, index) => index < 3));
+          setDataSource('当前匹配结果 + 已审核岗位');
+          setSelected(defaultSelection(rows, matchedRows.length));
+          if (rows.length > matchedRows.length) {
+            setMessage('已合并当前匹配结果和已审核岗位；未匹配岗位可手动加入对比，但匹配度会显示为待匹配。');
+          }
           return;
         }
 
         const history = await getMatches();
         if (history?.length) {
-          const rows = history.slice(0, 8).map((record, index) => normalizeHistoryRecord(record, approvedJobs || [], index));
+          const historyRows = history.map((record, index) => normalizeHistoryRecord(record, approvedJobs || [], index));
+          const rows = appendApprovedJobOptions(historyRows, approvedJobs);
           setCompareData(rows);
-          setDataSource('真实匹配历史');
-          setSelected(rows.map((_, index) => index < 3));
+          setDataSource('真实匹配历史 + 已审核岗位');
+          setSelected(defaultSelection(rows, historyRows.length));
+          if (rows.length > historyRows.length) {
+            setMessage('已合并真实匹配历史和已审核岗位；未匹配岗位可手动加入对比，但匹配度会显示为待匹配。');
+          }
           return;
         }
 
-        const rows = (approvedJobs || []).slice(0, 8).map((job, index) => normalizeJob(job, index));
+        const rows = (approvedJobs || []).map((job, index) => normalizeJob(job, index));
         setCompareData(rows);
         setDataSource('已审核岗位');
-        setSelected(rows.map((_, index) => index < 3));
+        setSelected(defaultSelection(rows));
         if (!rows.length) {
           setMessage('暂无可对比岗位。请先完成岗位导入、审核和索引。');
         } else {
