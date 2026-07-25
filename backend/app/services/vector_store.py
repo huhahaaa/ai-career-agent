@@ -23,6 +23,7 @@ def upsert_job_embedding(job: Dict) -> Dict:
     description = job.get("description", "")
     requirements = job.get("requirements", "")
     source_link = job.get("source_link", "")
+    skills = job.get("skills", [])  
     
     text_to_embed = f"{title}\n{description}\n{requirements}"
     embedding = model.encode(text_to_embed).tolist()
@@ -34,7 +35,8 @@ def upsert_job_embedding(job: Dict) -> Dict:
             "title": title,
             "company": company,
             "source_link": source_link,
-            "requirements": requirements[:100]
+            "requirements": requirements[:100],
+            "skills": skills
         }],
         documents=[text_to_embed]
     )
@@ -56,6 +58,7 @@ def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:
                 "title": results['metadatas'][0][i].get('title', '未知'),
                 "company": results['metadatas'][0][i].get('company', '未知'),
                 "source_link": results['metadatas'][0][i].get('source_link', ''),
+                "skills": results['metadatas'][0][i].get('skills', []),
                 "score": round(1 - results['distances'][0][i], 3),
                 "reason": results['documents'][0][i][:150] + "..."
             })
