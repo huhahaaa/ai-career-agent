@@ -99,6 +99,10 @@ function normalizeJob(job, index, match = null) {
     source_link: job.source_link || match?.details?.source_link || '',
     match_score: score,
     reason: match?.details?.reason || match?.reason || '',
+    matched_skills: match?.details?.matched_skills || match?.matched_skills || [],
+    missing_skills: match?.details?.missing_skills || match?.missing_skills || [],
+    gap_analysis: match?.details?.gap_analysis || match?.gap_analysis || '',
+    suggestion: match?.details?.suggestion || match?.suggestion || '',
     created_at: match?.created_at || '',
     from_history: Boolean(match),
   };
@@ -130,7 +134,18 @@ function normalizeImmediateMatch(match, index, jobs = []) {
       skills: job.skills || match.skills || [],
     },
     index,
-    { ...match, total_score: Math.round(match.score || 0), details: { reason: match.reason, source_link: match.source_link } },
+    {
+      ...match,
+      total_score: Math.round(match.score || 0),
+      details: {
+        reason: match.reason,
+        source_link: match.source_link,
+        matched_skills: match.matched_skills || [],
+        missing_skills: match.missing_skills || [],
+        gap_analysis: match.gap_analysis || '',
+        suggestion: match.suggestion || '',
+      },
+    },
   );
 }
 
@@ -323,6 +338,22 @@ export default function JobComparison() {
                     ))}
                   </tr>
                   <tr>
+                    <td>命中技能</td>
+                    {selectedJobs.map(job => (
+                      <td key={job.seriesKey}>
+                        {job.matched_skills?.length ? job.matched_skills.join('、') : '-'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td>缺失技能</td>
+                    {selectedJobs.map(job => (
+                      <td key={job.seriesKey}>
+                        {job.missing_skills?.length ? job.missing_skills.join('、') : '-'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
                     <td>来源</td>
                     {selectedJobs.map(job => (
                       <td key={job.seriesKey}>
@@ -437,6 +468,8 @@ export default function JobComparison() {
                 <div className="info-block" key={job.seriesKey}>
                   <div className="info-title">{job.company} - {job.title}</div>
                   <p className="info-desc">{job.reason}</p>
+                  {job.gap_analysis && <p className="info-desc">{job.gap_analysis}</p>}
+                  {job.suggestion && <p className="info-desc">{job.suggestion}</p>}
                 </div>
               ))}
             </div>

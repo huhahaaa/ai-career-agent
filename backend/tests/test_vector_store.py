@@ -30,6 +30,7 @@ class FakeCollection:
                 "title": "Python Engineer",
                 "company": "Example Inc",
                 "source_link": "https://example.com/jobs/1",
+                "skills_json": '["Python", "FastAPI", "SQL"]',
             }]],
             "distances": [[0.18]],
             "documents": [["Python FastAPI SQL"]],
@@ -64,6 +65,7 @@ def test_collection_and_model_are_loaded_lazily():
     assert collection.upserts[0]["ids"] == ["JOB-001"]
     assert matches[0]["score"] == 82.0
     assert matches[0]["title"] == "Python Engineer"
+    assert matches[0]["skills"] == ["Python", "FastAPI", "SQL"]
 
 
 def test_unapproved_job_is_rejected_before_vector_store_loads():

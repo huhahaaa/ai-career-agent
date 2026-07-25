@@ -6,6 +6,7 @@ from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
 from app.models.resume import Resume, ResumeVersion
 from app.models.user import User
+from app.services.matching import enrich_match_results
 from app.services.vector_store import VectorStoreUnavailable
 
 
@@ -51,6 +52,29 @@ def test_matching_api_preserves_response_contract(client, monkeypatch):
     assert response.status_code == 200
     assert response.json()["code"] == 0
     assert response.json()["data"]["matches"][0]["job_id"] == "JOB-001"
+    assert response.json()["data"]["matches"][0]["matched_skills"] == []
+
+
+def test_match_result_skill_gap_analysis_is_added():
+    matches = enrich_match_results(
+        "Python FastAPI SQL project with backend API design.",
+        [
+            {
+                "job_id": "1",
+                "title": "Python Backend Intern",
+                "company": "Example Inc",
+                "score": 88.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/1",
+                "skills": ["Python", "FastAPI", "SQL", "Docker"],
+            }
+        ],
+    )
+
+    assert matches[0]["matched_skills"] == ["Python", "FastAPI", "SQL"]
+    assert matches[0]["missing_skills"] == ["Docker"]
+    assert "缺少：Docker" in matches[0]["gap_analysis"]
+    assert "Docker" in matches[0]["suggestion"]
 
 
 def test_matching_api_returns_503_when_vector_service_is_unavailable(
@@ -176,6 +200,10 @@ def test_matching_run_persists_history_for_database_jobs(
                 "score": 88.4,
                 "reason": "FastAPI and SQL overlap",
                 "source_link": "https://example.com/jobs/matching-history",
+                "matched_skills": ["Python", "FastAPI", "SQL"],
+                "missing_skills": ["Docker"],
+                "gap_analysis": "已命中 3/4 项技能，缺少：Docker。",
+                "suggestion": "建议补充：Docker。",
             }
         ],
     )
@@ -195,6 +223,12 @@ def test_matching_run_persists_history_for_database_jobs(
     assert history.status_code == 200
     assert history.json()["data"][0]["job_id"] == job_id
     assert history.json()["data"][0]["total_score"] == 88
+    assert history.json()["data"][0]["details"]["matched_skills"] == [
+        "Python",
+        "FastAPI",
+        "SQL",
+    ]
+    assert history.json()["data"][0]["details"]["missing_skills"] == ["Docker"]
 
     with session_factory() as db:
         assert len(db.scalars(select(Resume)).all()) == 1

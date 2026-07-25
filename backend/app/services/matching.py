@@ -1,3 +1,4 @@
+import re
 from typing import Dict, Iterable, List
 
 from app.services.vector_store import (
@@ -12,13 +13,87 @@ def build_matching_query(resume_text: str, target_position: str = "") -> str:
     return "\n".join(section for section in sections if section)
 
 
+def _normalize_skill(skill: str) -> str:
+    return re.sub(r"\s+", " ", str(skill).strip()).lower()
+
+
+def _contains_skill(text: str, skill: str) -> bool:
+    normalized_skill = _normalize_skill(skill)
+    if not normalized_skill:
+        return False
+    if re.search(r"[a-z0-9+#.]", normalized_skill):
+        pattern = r"(?<![a-z0-9+#.])%s(?![a-z0-9+#.])" % re.escape(normalized_skill)
+        return re.search(pattern, text, re.IGNORECASE) is not None
+    return normalized_skill in text.lower()
+
+
+def _normalize_job_skills(value: object) -> List[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        raw_items = re.split(r"[,，/、\n]", value)
+    elif isinstance(value, list):
+        raw_items = value
+    else:
+        raw_items = []
+
+    seen = set()
+    skills = []
+    for item in raw_items:
+        skill = str(item).strip()
+        key = _normalize_skill(skill)
+        if not skill or key in seen:
+            continue
+        seen.add(key)
+        skills.append(skill)
+    return skills
+
+
+def enrich_match_results(resume_text: str, matches: List[Dict]) -> List[Dict]:
+    enriched = []
+    for match in matches:
+        job_skills = _normalize_job_skills(match.get("skills"))
+        matched_skills = [
+            skill for skill in job_skills if _contains_skill(resume_text, skill)
+        ]
+        missing_skills = [
+            skill for skill in job_skills if skill not in matched_skills
+        ]
+
+        if not job_skills:
+            gap_analysis = "岗位技能字段不足，暂无法计算技能缺口。"
+            suggestion = "建议先补充岗位技能词，再重新运行匹配。"
+        elif missing_skills:
+            gap_analysis = "已命中 %s/%s 项技能，缺少：%s。" % (
+                len(matched_skills),
+                len(job_skills),
+                "、".join(missing_skills),
+            )
+            suggestion = "建议在简历项目或技能栏补充：%s。" % "、".join(missing_skills)
+        else:
+            gap_analysis = "岗位技能要求已全部命中。"
+            suggestion = "可以继续强化项目量化结果和岗位相关经历。"
+
+        enriched.append(
+            {
+                **match,
+                "matched_skills": matched_skills,
+                "missing_skills": missing_skills,
+                "gap_analysis": gap_analysis,
+                "suggestion": suggestion,
+            }
+        )
+    return enriched
+
+
 def match_resume_to_jobs(
     resume_text: str,
     target_position: str = "",
     top_k: int = 5,
 ) -> List[Dict]:
     query = build_matching_query(resume_text, target_position)
-    return search_similar_jobs(query=query, top_k=top_k)
+    matches = search_similar_jobs(query=query, top_k=top_k)
+    return enrich_match_results(resume_text, matches)
 
 
 def index_approved_job(job: Dict) -> Dict:

@@ -16,6 +16,10 @@ class MatchResult(BaseModel):
     score: float = Field(ge=0, le=100)
     reason: str
     source_link: str = ""
+    matched_skills: List[str] = Field(default_factory=list)
+    missing_skills: List[str] = Field(default_factory=list)
+    gap_analysis: str = ""
+    suggestion: str = ""
 
 
 class MatchResponse(BaseModel):

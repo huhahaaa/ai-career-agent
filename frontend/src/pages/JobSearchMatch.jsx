@@ -117,6 +117,36 @@ export default function JobSearchMatch() {
                   </div>
                 </div>
                 <p>{item.reason}</p>
+                {(item.matched_skills?.length > 0 || item.missing_skills?.length > 0) && (
+                  <div className="feedback-section">
+                    {item.matched_skills?.length > 0 && (
+                      <>
+                        <h4>命中技能</h4>
+                        <div className="tag-group">
+                          {item.matched_skills.map(skill => (
+                            <span key={skill} className="tag tag-success">{skill}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {item.missing_skills?.length > 0 && (
+                      <>
+                        <h4>缺失技能</h4>
+                        <div className="tag-group">
+                          {item.missing_skills.map(skill => (
+                            <span key={skill} className="tag tag-warning">{skill}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {(item.gap_analysis || item.suggestion) && (
+                  <div className="info-block">
+                    {item.gap_analysis && <div className="info-title">{item.gap_analysis}</div>}
+                    {item.suggestion && <p className="info-desc">{item.suggestion}</p>}
+                  </div>
+                )}
                 <div className="form-actions">
                   {item.source_link && (
                     <a className="btn btn-sm btn-outline" href={item.source_link} target="_blank" rel="noreferrer">

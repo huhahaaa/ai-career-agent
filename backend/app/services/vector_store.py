@@ -165,6 +165,12 @@ class VectorStore:
         matches = []
         for index, job_id in enumerate(ids):
             metadata = metadatas[index] or {}
+            try:
+                skills = json.loads(metadata.get("skills_json", "[]") or "[]")
+            except json.JSONDecodeError:
+                skills = []
+            if not isinstance(skills, list):
+                skills = []
             distance = float(distances[index]) if index < len(distances) else 1.0
             score = round(max(0.0, min(1.0, 1.0 - distance)) * 100, 2)
             matches.append(
@@ -175,6 +181,7 @@ class VectorStore:
                     "score": score,
                     "reason": "简历与岗位描述的语义相似度为 %.1f%%" % score,
                     "source_link": metadata.get("source_link", ""),
+                    "skills": [str(skill) for skill in skills],
                 }
             )
         return matches

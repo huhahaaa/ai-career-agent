@@ -107,6 +107,10 @@ const mockMatches = [
     score: 86.4,
     reason: '简历中的 React、TypeScript 经历与岗位要求高度相关。',
     source_link: 'https://example.com/jobs/1',
+    matched_skills: ['React', 'TypeScript'],
+    missing_skills: ['Node.js'],
+    gap_analysis: '已命中 2/3 项技能，缺少：Node.js。',
+    suggestion: '建议在项目经历中补充 Node.js 或后端接口协作经验。',
   },
 ];
 
