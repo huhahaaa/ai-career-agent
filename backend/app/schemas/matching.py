@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ class MatchResult(BaseModel):
     score: float = Field(ge=0, le=100)
     semantic_score: float | None = Field(default=None, ge=0, le=100)
     skill_coverage_score: float | None = Field(default=None, ge=0, le=100)
+    ability_breakdown: Dict[str, object] = Field(default_factory=dict)
     reason: str
     source_link: str = ""
     matched_skills: List[str] = Field(default_factory=list)

@@ -76,12 +76,15 @@ def test_match_result_skill_gap_analysis_is_added():
     assert matches[0]["matched_skills"] == ["Python", "FastAPI", "SQL"]
     assert matches[0]["missing_skills"] == ["Docker"]
     assert matches[0]["semantic_score"] == 94.0
-    assert matches[0]["skill_coverage_score"] == 75.0
-    assert matches[0]["score"] == 88.3
+    assert matches[0]["skill_coverage_score"] == 88.89
+    assert matches[0]["score"] == 91.96
+    assert matches[0]["ability_breakdown"]["direction_score"] == 100.0
+    assert matches[0]["ability_breakdown"]["language_score"] == 100.0
+    assert matches[0]["ability_breakdown"]["framework_tool_score"] == 50.0
     assert "缺少：Docker" in matches[0]["gap_analysis"]
     assert "Docker" in matches[0]["suggestion"]
     assert "94.0" in matches[0]["reason"]
-    assert "75.0%" in matches[0]["reason"]
+    assert "88.9" in matches[0]["reason"]
 
 
 def test_match_results_are_sorted_by_weighted_score():
@@ -110,8 +113,9 @@ def test_match_results_are_sorted_by_weighted_score():
     )
 
     assert matches[0]["job_id"] == "skill-covered"
-    assert matches[0]["score"] == 93.0
-    assert matches[1]["score"] == 66.5
+    assert matches[0]["score"] == 94.0
+    assert matches[1]["score"] == 59.0
+    assert matches[1]["ability_breakdown"]["language_score"] == 0.0
 
 
 def test_matching_api_returns_503_when_vector_service_is_unavailable(
@@ -337,7 +341,8 @@ def test_matching_history_backfills_skill_gap_for_legacy_records(
     assert details["matched_skills"] == ["Python", "FastAPI"]
     assert details["missing_skills"] == ["Docker"]
     assert details["semantic_score"] == 85.0
-    assert details["skill_coverage_score"] == 66.67
-    assert details["score"] == 79.5
-    assert response.json()["data"][0]["total_score"] == 80
+    assert details["skill_coverage_score"] == 88.89
+    assert details["score"] == 86.56
+    assert response.json()["data"][0]["total_score"] == 87
+    assert details["ability_breakdown"]["language_score"] == 100.0
     assert "Docker" in details["gap_analysis"]

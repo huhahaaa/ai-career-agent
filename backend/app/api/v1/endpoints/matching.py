@@ -38,6 +38,7 @@ SKILL_GAP_DETAIL_KEYS = (
     "suggestion",
     "semantic_score",
     "skill_coverage_score",
+    "ability_breakdown",
 )
 
 
@@ -111,6 +112,7 @@ def _matching_record_details(record: MatchingRecord) -> dict:
                 "skills": _load_json_list(record.job.skills),
             }
         ],
+        str(details.get("target_position", "")),
     )[0]
     for key in SKILL_GAP_DETAIL_KEYS:
         details[key] = enriched.get(key, [] if key.endswith("_skills") else "")
@@ -167,6 +169,7 @@ def _save_matching_records(
                         "score": match.get("score", 0),
                         "semantic_score": match.get("semantic_score"),
                         "skill_coverage_score": match.get("skill_coverage_score"),
+                        "ability_breakdown": match.get("ability_breakdown", {}),
                         "reason": match.get("reason", ""),
                         "source_link": match.get("source_link", ""),
                         "matched_skills": match.get("matched_skills", []),
