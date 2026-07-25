@@ -155,7 +155,7 @@ export function getCurrentUser() {
 }
 
 export function getDashboard() {
-  return USE_MOCK ? Promise.resolve(mockDashboard) : unavailable('数据看板');
+  return mockFallback(() => request('/admin/dashboard'), () => mockDashboard);
 }
 
 export function getResumes() {
