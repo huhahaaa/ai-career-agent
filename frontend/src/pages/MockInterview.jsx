@@ -1,7 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, ResponsiveContainer } from 'recharts';
 import { startInterview, sendMessage, endInterview } from '../api/client';
+
+// Web Speech API 兼容处理
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const speechSupported = !!SpeechRecognition;
 
 // STAR 法则知识卡片
 const starMethodGuide = {
@@ -53,8 +57,9 @@ export default function MockInterview() {
   const [currentKnowledgeTip, setCurrentKnowledgeTip] = useState(null);
   const [showKnowledgeCard, setShowKnowledgeCard] = useState(false);
   const [showInterviewTip, setShowInterviewTip] = useState(true);
+  const [speechError, setSpeechError] = useState('');
   const messagesEnd = useRef(null);
-  const recordingTimerRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,33 +69,96 @@ export default function MockInterview() {
     startInterview(location.state?.jobId || 'j1').then(data => setInterviewId(data.id)).catch(() => {});
   }, []);
 
-  // 语音录制模拟
+  // 真实语音识别
+  const startRecognition = useCallback(() => {
+    if (!speechSupported) {
+      setSpeechError('您的浏览器不支持语音识别，请使用 Chrome 或 Edge');
+      setTimeout(() => setSpeechError(''), 3000);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'zh-CN';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    let finalTranscript = '';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      setRecordingText(finalTranscript + interim);
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') {
+        // 用户没有说话，继续监听
+        return;
+      }
+      if (event.error === 'aborted') return;
+      const errorMap = {
+        'not-allowed': '请授权麦克风权限',
+        'audio-capture': '未检测到麦克风设备',
+        'network': '网络连接异常，语音识别需要联网',
+        'language-not-supported': '不支持中文识别',
+      };
+      setSpeechError(errorMap[event.error] || `语音识别出错: ${event.error}`);
+      setTimeout(() => setSpeechError(''), 3000);
+    };
+
+    recognition.onend = () => {
+      // 如果还在录音状态，自动重新开始（处理静音超时）
+      if (recognitionRef.current) {
+        try { recognition.start(); } catch { /* 已在运行则忽略 */ }
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+    setRecordingText('');
+    setSpeechError('');
+  }, []);
+
+  const stopRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.onend = null; // 阻止自动重启
+      recognitionRef.current.onresult = null;
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+    if (recordingText.trim()) {
+      setInput(prev => prev ? `${prev} ${recordingText}` : recordingText);
+    }
+    setRecordingText('');
+  }, [recordingText]);
+
   const toggleRecording = () => {
     if (isRecording) {
-      // 停止录制
-      clearInterval(recordingTimerRef.current);
-      setIsRecording(false);
-      setInput(prev => prev + (recordingText || '（语音输入内容已插入，请编辑后发送）'));
-      setRecordingText('');
+      stopRecognition();
     } else {
-      // 开始录制
-      setIsRecording(true);
-      setRecordingText('');
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingText(prev => {
-          const phrases = [
-            '我认为这个问题可以从以下几个方面来回答...',
-            '首先，在我的项目经历中，',
-            '我采用的技术方案是...',
-            '最终取得了不错的效果。',
-          ];
-          const next = phrases[Math.floor(Math.random() * phrases.length)];
-          if (prev.length > 80) return prev;
-          return prev + next;
-        });
-      }, 1500);
+      startRecognition();
     }
   };
+
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || sending || isEnded) return;
@@ -271,33 +339,54 @@ export default function MockInterview() {
           </div>
 
           {!isEnded && (
-            <div className="chat-input-area">
-              <button
-                className={`btn btn-voice ${isRecording ? 'recording' : ''}`}
-                onClick={toggleRecording}
-                title={isRecording ? '停止录音' : '语音输入'}
-                disabled={sending}
-              >
-                🎤
-              </button>
+            <>
+              {/* 语音录音状态条 */}
               {isRecording && (
-                <div className="recording-indicator">
-                  正在录音...
-                  {recordingText && <span className="recording-text-preview">{recordingText.slice(-30)}</span>}
+                <div className="recording-bar">
+                  <span className="pulse-dot"></span>
+                  <span className="recording-label">正在录音，请说话...</span>
+                  {recordingText && (
+                    <span className="recording-preview">{recordingText}</span>
+                  )}
+                  <button className="recording-stop-btn" onClick={toggleRecording}>停止录音</button>
                 </div>
               )}
-              <input
-                type="text"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSend()}
-                placeholder={isRecording ? '语音识别中...' : input ? '' : '💡 试试用STAR法则回答问题：S(背景) → T(任务) → A(行动) → R(结果)'}
-                disabled={sending}
-              />
-              <button className="btn btn-primary" onClick={handleSend} disabled={sending || !input.trim()}>
-                {sending ? '发送中...' : '发送'}
-              </button>
-            </div>
+
+              {/* 语音识别错误提示 */}
+              {speechError && (
+                <div className="speech-error-bar">
+                  <span>⚠️ {speechError}</span>
+                </div>
+              )}
+
+              <div className="chat-input-area">
+                <button
+                  className={`btn btn-voice ${isRecording ? 'recording' : ''}`}
+                  onClick={toggleRecording}
+                  title={speechSupported ? (isRecording ? '停止录音' : '点击开始语音输入') : '浏览器不支持语音识别（需Chrome/Edge）'}
+                  disabled={sending || !speechSupported}
+                >
+                  {isRecording ? '⏹' : '🎤'}
+                </button>
+                {isRecording && (
+                  <div className="recording-indicator">
+                    正在录音...
+                    {recordingText && <span className="recording-text-preview">{recordingText.slice(-30)}</span>}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSend()}
+                  placeholder={isRecording ? '语音识别中...' : input ? '' : '💡 试试用STAR法则回答问题：S(背景) → T(任务) → A(行动) → R(结果)'}
+                  disabled={sending}
+                />
+                <button className="btn btn-primary" onClick={handleSend} disabled={sending || !input.trim()}>
+                  {sending ? '发送中...' : '发送'}
+                </button>
+              </div>
+            </>
           )}
         </div>
 

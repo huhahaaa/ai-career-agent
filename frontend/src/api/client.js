@@ -4,6 +4,19 @@ const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
 // 用户相关 Mock
 const mockUser = { id: 'u1', username: 'demo', email: 'demo@example.com', role: 'candidate', avatar: null, created_at: '2026-06-01' };
 
+// 本地存储注册的账号（用于 Mock 模式下也能反复登录）
+const USER_STORE_KEY = 'ai_career_mock_users';
+function loadMockUsers() {
+  try {
+    const raw = localStorage.getItem(USER_STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+function saveMockUsers(users) {
+  try { localStorage.setItem(USER_STORE_KEY, JSON.stringify(users)); } catch {}
+}
+
 // 简历 Mock 数据（localStorage 持久化）
 const RESUME_STORAGE_KEY = 'ai_career_mock_resumes';
 
@@ -220,8 +233,19 @@ export async function login(username, password) {
     return data;
   } catch {
     await delay();
+    // demo 账号
     if (username === 'demo' && password === 'demo123') {
       return { user: mockUser, access_token: 'mock_token_demo', token_type: 'bearer' };
+    }
+    // 检查本地已注册的账号
+    const users = loadMockUsers();
+    const found = users.find(u => u.username === username && u.password === password);
+    if (found) {
+      return {
+        user: { id: found.id, username: found.username, email: found.email, role: 'candidate', avatar: null, created_at: found.created_at },
+        access_token: `mock_token_${found.username}`,
+        token_type: 'bearer',
+      };
     }
     throw new Error('用户名或密码错误');
   }
@@ -232,7 +256,25 @@ export async function register(userData) {
     return await request('/auth/register', { method: 'POST', body: JSON.stringify(userData) });
   } catch {
     await delay();
-    return { user: { ...mockUser, username: userData.username, email: userData.email }, access_token: 'mock_token_new', token_type: 'bearer' };
+    const users = loadMockUsers();
+    // 用户名已存在
+    if (users.some(u => u.username === userData.username)) {
+      throw new Error('用户名已存在');
+    }
+    const newUser = {
+      id: 'u_' + Date.now(),
+      username: userData.username,
+      email: userData.email,
+      password: userData.password,
+      created_at: new Date().toISOString(),
+    };
+    users.push(newUser);
+    saveMockUsers(users);
+    return {
+      user: { id: newUser.id, username: newUser.username, email: newUser.email, role: 'candidate', avatar: null, created_at: newUser.created_at },
+      access_token: `mock_token_${newUser.username}`,
+      token_type: 'bearer',
+    };
   }
 }
 

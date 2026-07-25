@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { register as apiRegister } from '../api/client';
 
 export default function Register() {
-  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ username: '', password: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -15,7 +15,7 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.username.trim() || !form.email.trim() || !form.password) {
+    if (!form.username.trim() || !form.password) {
       setError('请填写所有必填字段');
       return;
     }
@@ -29,7 +29,7 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const data = await apiRegister({ username: form.username, email: form.email, password: form.password });
+      const data = await apiRegister({ username: form.username, password: form.password });
       login(data.user || { username: form.username }, data.access_token);
       navigate('/');
     } catch (err) {
@@ -52,10 +52,6 @@ export default function Register() {
           <div className="form-group">
             <label>用户名 *</label>
             <input type="text" value={form.username} onChange={update('username')} placeholder="请输入用户名" autoFocus />
-          </div>
-          <div className="form-group">
-            <label>邮箱 *</label>
-            <input type="email" value={form.email} onChange={update('email')} placeholder="请输入邮箱" />
           </div>
           <div className="form-group">
             <label>密码 *</label>

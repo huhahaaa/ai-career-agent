@@ -543,6 +543,51 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
   max-width: 100px; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ===== Real Voice Recording Bar ===== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.pulse-dot {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--error);
+  animation: pulse-dot 1.2s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .3; transform: scale(1.6); }
+}
+.recording-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--error-bg);
+  border: 1px solid #fca5a5; border-radius: var(--radius);
+  margin-bottom: 12px; animation: fadeIn .2s ease;
+}
+.recording-label {
+  color: var(--error); font-size: .85rem; font-weight: 500;
+  white-space: nowrap;
+}
+.recording-preview {
+  flex: 1; color: var(--text-secondary); font-size: .82rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+}
+.recording-stop-btn {
+  padding: 4px 14px; border: 1px solid var(--error); border-radius: 4px;
+  background: var(--error); color: #fff; font-size: .78rem;
+  cursor: pointer; white-space: nowrap; transition: all .2s;
+}
+.recording-stop-btn:hover {
+  background: #dc2626; border-color: #dc2626;
+}
+.speech-error-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; background: #fffbeb;
+  border: 1px solid #fcd34d; border-radius: var(--radius);
+  margin-bottom: 12px; font-size: .82rem; color: #92400e;
+  animation: fadeIn .2s ease;
+}
+
 /* ===== Risk Overview Card ===== */
 .risk-overview-card {
   background: var(--bg-card); border-radius: var(--radius);
