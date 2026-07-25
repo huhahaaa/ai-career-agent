@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, HttpUrl
@@ -13,14 +14,12 @@ class JobCreate(BaseModel):
 
 
 class JobPostingOut(JobCreate):
-    id: str
+    id: int
     status: Literal["pending", "approved", "rejected"] = "pending"
     audit_comment: Optional[str] = ""
-    updated_at: str
+    updated_at: datetime
 
 
 class JobAuditRequest(BaseModel):
     status: Literal["approved", "rejected"]
-    reviewer: str
-    comment: str
-
+    comment: str = ""

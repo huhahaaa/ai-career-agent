@@ -2,6 +2,10 @@
 
 FastAPI backend for authentication, job data auditing, resume review, matching, and mock interview workflows.
 
+## Prerequisite
+
+Use Python 3.11 for local development and testing.
+
 ## Run
 
 ```bash
@@ -9,6 +13,39 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
+```
+
+Install the optional vector matching dependencies before building or querying
+the Chroma index:
+
+```bash
+pip install -r requirements-vector.txt
+python scripts/index_jobs.py ../data/processed/jobs_clean.jsonl
+```
+
+The embedding model and Chroma client are loaded only on the first indexing or
+matching request, so authentication and other API modules can start without the
+model being downloaded.
+
+The application creates `career_agent.db` and all core tables on first startup.
+Set a private `SECRET_KEY` before sharing or deploying the service; the available
+environment variables are listed in the repository `.env.example` file.
+
+## Reviewer Account
+
+Public registration always creates a `student` account. Create an account with
+job-review permission from the `backend` directory:
+
+```bash
+python -m app.commands.create_reviewer --username reviewer --email reviewer@example.com
+```
+
+The command prompts for the password without writing it to the shell history.
+
+## Test
+
+```bash
+pytest -q
 ```
 
 ## Main Modules
@@ -20,3 +57,12 @@ uvicorn app.main:app --reload --port 8000
 - `api/v1/endpoints/interviews.py`: mock interview workflow
 - `services/`: business logic placeholders for each member
 
+All `/api/v1` responses use the following envelope:
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```

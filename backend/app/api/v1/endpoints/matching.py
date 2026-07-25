@@ -1,4 +1,4 @@
-from typing import List
+﻿from typing import List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,7 +18,7 @@ class MatchRequest(BaseModel):
 def run_matching(payload: MatchRequest):
     if not payload.resume_text.strip():
         raise HTTPException(status_code=400, detail="简历文本不能为空")
-
+    
     results = search_similar_jobs(payload.resume_text, top_k=payload.top_k)
     return {"matches": results}
 

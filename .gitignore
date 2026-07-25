@@ -17,6 +17,7 @@ htmlcov/
 .env
 backend/.env
 frontend/.env
+.runtime-logs/
 
 # Node
 frontend/node_modules/
@@ -36,8 +37,17 @@ Thumbs.db
 # Runtime data, keep only placeholders and curated samples
 data/raw_jobs/*
 !data/raw_jobs/.gitkeep
+!data/raw_jobs/*.csv
+!data/raw_jobs/*.jsonl
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/*.jsonl
+!data/processed/*.json
+!data/processed/*.md
 data/audit_samples/*
 !data/audit_samples/.gitkeep
-
+!data/audit_samples/*.json
+!data/audit_samples/*.jsonl
+data/vector_store/
+backend/data/vector_store/
+backend/data/uploads/
