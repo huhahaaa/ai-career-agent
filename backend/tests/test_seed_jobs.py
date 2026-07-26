@@ -1,11 +1,18 @@
 import json
+import importlib.util
 from pathlib import Path
-
-from scripts.seed_jobs import load_clean_jobs, write_seed_jobs
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 JOBS_PATH = PROJECT_ROOT / "data" / "processed" / "jobs_clean.jsonl"
+SEED_JOBS_PATH = PROJECT_ROOT / "scripts" / "seed_jobs.py"
+
+spec = importlib.util.spec_from_file_location("seed_jobs", SEED_JOBS_PATH)
+assert spec and spec.loader
+seed_jobs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(seed_jobs)
+load_clean_jobs = seed_jobs.load_clean_jobs
+write_seed_jobs = seed_jobs.write_seed_jobs
 
 
 def test_load_clean_jobs_returns_approved_api_payloads():

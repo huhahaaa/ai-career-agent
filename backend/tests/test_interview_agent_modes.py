@@ -12,9 +12,13 @@ from app.services.interview_agent import (
 def test_question_bank_loads_expected_data():
     questions = load_question_bank()
 
-    assert len(questions) == 30
+    assert len(questions) == 60
     assert len(agent._POSITION_QUESTIONS) == 6
     assert agent.get_question_bank_summary()["position_bank_count"] == 6
+    assert any(question.get("source") == "audit_samples" for question in questions)
+
+    backend_pool = agent.get_position_question_pool("Python 后端工程师", "技术面")
+    assert any("REST API中如何设计资源" in question for question in backend_pool)
 
 
 def test_interview_modes_generate_distinct_first_questions():
@@ -51,7 +55,7 @@ def test_structured_answer_feedback_and_calibration_summary():
     assert result["issues"]
     assert result["improvement_suggestions"]
     assert "calibration_summary" in report
-    assert report["question_bank_summary"]["total"] == 30
+    assert report["question_bank_summary"]["total"] == 60
 
 
 def test_followup_points_out_missing_question_requirements():

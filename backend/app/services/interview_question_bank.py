@@ -18,6 +18,73 @@ POSITION_KEYWORDS = {
 _QUESTION_BANK: Optional[List[Dict[str, Any]]] = None
 _POSITION_QUESTIONS: Dict[str, List[Dict[str, str]]] = {}
 _QUESTION_BANK_PATH = Path(__file__).resolve().parents[3] / "data" / "interview_question_bank.json"
+_AUDIT_QUESTION_BANK_PATH = (
+    Path(__file__).resolve().parents[3] / "data" / "audit_samples" / "interview_questions.jsonl"
+)
+
+
+def _dedupe_questions(questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen: set = set()
+    result: List[Dict[str, Any]] = []
+    for question in questions:
+        key = question.get("id") or question.get("question")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(question)
+    return result
+
+
+def _dedupe_position_questions(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    seen: set = set()
+    result: List[Dict[str, str]] = []
+    for item in items:
+        question = item.get("question")
+        if not question or question in seen:
+            continue
+        seen.add(question)
+        result.append(item)
+    return result
+
+
+def _map_audit_category_to_mode(category: str, difficulty: str) -> str:
+    if "场景" in category or difficulty == "较难":
+        return "压力面"
+    return "技术面"
+
+
+def _load_audit_questions() -> List[Dict[str, Any]]:
+    if not _AUDIT_QUESTION_BANK_PATH.exists():
+        return []
+
+    questions: List[Dict[str, Any]] = []
+    for line in _AUDIT_QUESTION_BANK_PATH.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        position = normalize_position(item.get("role", ""))
+        if not position:
+            continue
+        expected_points = item.get("expected_points") or []
+        mode = _map_audit_category_to_mode(
+            str(item.get("category") or ""),
+            str(item.get("difficulty") or ""),
+        )
+        questions.append(
+            {
+                "id": item.get("question_id"),
+                "mode": mode,
+                "category": item.get("category"),
+                "positions": [position],
+                "question": item.get("question"),
+                "difficulty": item.get("difficulty"),
+                "expected_focus": "；".join(expected_points),
+                "follow_up": item.get("follow_up"),
+                "scoring_tags": item.get("scoring_tags", []),
+                "source": "audit_samples",
+            }
+        )
+    return questions
 
 
 def load_question_bank() -> List[Dict[str, Any]]:
@@ -27,9 +94,25 @@ def load_question_bank() -> List[Dict[str, Any]]:
     try:
         content = _QUESTION_BANK_PATH.read_text(encoding="utf-8")
         data = json.loads(content)
-        _QUESTION_BANK = data.get("questions", [])
+        base_questions = data.get("questions", [])
+        audit_questions = _load_audit_questions()
+        _QUESTION_BANK = _dedupe_questions(base_questions + audit_questions)
         _POSITION_QUESTIONS.clear()
         _POSITION_QUESTIONS.update(data.get("position_banks", {}) or {})
+        for question in audit_questions:
+            question_text = question.get("question")
+            if not question_text:
+                continue
+            for position in question.get("positions", []):
+                _POSITION_QUESTIONS.setdefault(position, []).append(
+                    {
+                        "mode": question.get("mode", "技术面"),
+                        "question": question_text,
+                        "source": "audit_samples",
+                    }
+                )
+        for position, items in list(_POSITION_QUESTIONS.items()):
+            _POSITION_QUESTIONS[position] = _dedupe_position_questions(items)
         logger.info(
             "Loaded %d questions and %d position banks from question bank",
             len(_QUESTION_BANK),

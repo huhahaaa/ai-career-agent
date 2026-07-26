@@ -659,6 +659,10 @@ def _generate_questions(
     projects_text = json.dumps(parsed_resume.get("projects", []), ensure_ascii=False)
     position = target_position or "目标岗位"
     default_questions = _default_questions(position, interview_mode)
+    question_bank_reference = "\n".join(
+        f"{index + 1}. {question}"
+        for index, question in enumerate(default_questions[:8])
+    )
 
     position_bucket = normalize_position(target_position)
     real_resp = get_position_responsibilities(position_bucket, job_id)
@@ -693,11 +697,14 @@ def _generate_questions(
 目标岗位：{position}
 岗位要求：{job_requirements}
 真实岗位职责参考：{("；".join(real_resp[:4]) if real_resp else "（无）")}
+题库参考：
+{question_bank_reference or "（无）"}
 
 题目分配：
 {allocation}
 
 {mode_instruction}
+请优先从题库参考中选取或改写题目，并结合候选人简历和真实岗位职责进行个性化调整。
 
 只输出 JSON 数组，例如 ["题目1", "题目2"]。
 """
@@ -791,9 +798,6 @@ def _mode_scoring_hint(interview_mode: str) -> str:
 
 def _default_questions(position: str = "", interview_mode: str = DEFAULT_INTERVIEW_MODE) -> List[str]:
     target = position or "目标岗位"
-    position_questions = get_position_question_pool(position, interview_mode)
-    if position_questions:
-        return position_questions[:8]
     mode_questions = {
         "HR面": [
             "请做一个简短的自我介绍，重点说明你的职业规划和个人优势。",
@@ -836,7 +840,18 @@ def _default_questions(position: str = "", interview_mode: str = DEFAULT_INTERVI
             "你对这次练习有什么特别想提升的方面？",
         ],
     }
-    return mode_questions.get(interview_mode, mode_questions["技术面"])
+    generic_questions = mode_questions.get(interview_mode, mode_questions["技术面"])
+    position_questions = get_position_question_pool(position, interview_mode)
+    if not position_questions:
+        return generic_questions
+
+    combined_questions: List[str] = []
+    for question in position_questions + generic_questions:
+        if question and question not in combined_questions:
+            combined_questions.append(question)
+        if len(combined_questions) >= 8:
+            break
+    return combined_questions
 
 
 def _generate_followup(
