@@ -40,6 +40,7 @@ def _job_metadata(job: Dict) -> Dict:
     if isinstance(skills, str):
         skills = [skills]
     return {
+        "doc_type": "job",
         "title": str(job.get("title", "")),
         "company": str(job.get("company", "")),
         "location": str(job.get("location", "")),
@@ -53,12 +54,26 @@ def _job_metadata(job: Dict) -> Dict:
     }
 
 
+def _clean_metadata(metadata: Dict) -> Dict:
+    cleaned = {}
+    for key, value in (metadata or {}).items():
+        if value is None:
+            cleaned[str(key)] = ""
+        elif isinstance(value, (str, int, float, bool)):
+            cleaned[str(key)] = value
+        else:
+            cleaned[str(key)] = json.dumps(value, ensure_ascii=False)
+    return cleaned
+
+
 class VectorStore:
     def __init__(
         self,
         collection_factory: Optional[Callable[[], object]] = None,
+        collection_name: Optional[str] = None,
     ) -> None:
         self._collection_factory = collection_factory or self._create_collection
+        self._collection_name = collection_name or settings.vector_collection_name
         self._collection: Optional[object] = None
         self._lock = threading.Lock()
 
@@ -86,7 +101,7 @@ class VectorStore:
                 model_name=settings.vector_model_name,
             )
             return client.get_or_create_collection(
-                name=settings.vector_collection_name,
+                name=self._collection_name,
                 embedding_function=embedding_function,
                 metadata={"hnsw:space": "cosine"},
             )
@@ -116,7 +131,7 @@ class VectorStore:
             collection.upsert(
                 ids=[job_id],
                 documents=[document],
-                metadatas=[_job_metadata(job)],
+                metadatas=[_clean_metadata(_job_metadata(job))],
             )
         except Exception as exc:
             raise VectorStoreUnavailable("job indexing failed: %s" % exc) from exc
@@ -172,6 +187,8 @@ class VectorStore:
         matches = []
         for index, job_id in enumerate(ids):
             metadata = metadatas[index] or {}
+            if metadata.get("doc_type") not in {"", None, "job"}:
+                continue
             try:
                 skills = json.loads(metadata.get("skills_json", "[]") or "[]")
             except json.JSONDecodeError:
@@ -197,8 +214,82 @@ class VectorStore:
             )
         return matches
 
+    def upsert_document(self, document: Dict) -> Dict:
+        doc_id = str(document.get("doc_id") or "").strip()
+        content = str(document.get("content") or "").strip()
+        if not doc_id:
+            raise ValueError("knowledge document requires doc_id")
+        if not content:
+            raise ValueError("knowledge document content is empty")
+
+        metadata = _clean_metadata(document.get("metadata") or {})
+        metadata.setdefault("doc_type", "knowledge")
+        collection = self._get_collection()
+        try:
+            collection.upsert(
+                ids=[doc_id],
+                documents=[content],
+                metadatas=[metadata],
+            )
+        except Exception as exc:
+            raise VectorStoreUnavailable("knowledge indexing failed: %s" % exc) from exc
+        return {"doc_id": doc_id, "status": "indexed"}
+
+    def upsert_documents(self, documents: Iterable[Dict]) -> Dict:
+        indexed = []
+        skipped = 0
+        for document in documents:
+            try:
+                indexed.append(self.upsert_document(document)["doc_id"])
+            except ValueError:
+                skipped += 1
+        return {
+            "indexed_count": len(indexed),
+            "skipped_count": skipped,
+            "doc_ids": indexed,
+        }
+
+    def search_documents(self, query: str, top_k: int = 5) -> List[Dict]:
+        if not query.strip():
+            raise ValueError("knowledge query cannot be empty")
+
+        collection = self._get_collection()
+        try:
+            count = collection.count()
+            if count == 0:
+                return []
+            result = collection.query(
+                query_texts=[query],
+                n_results=min(top_k, count),
+                include=["metadatas", "distances", "documents"],
+            )
+        except Exception as exc:
+            raise VectorStoreUnavailable("knowledge search failed: %s" % exc) from exc
+
+        ids = (result.get("ids") or [[]])[0]
+        metadatas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
+        documents = (result.get("documents") or [[]])[0]
+        matches = []
+        for index, doc_id in enumerate(ids):
+            metadata = metadatas[index] or {}
+            distance = float(distances[index]) if index < len(distances) else 1.0
+            score = round(max(0.0, min(1.0, 1.0 - distance)) * 100, 2)
+            matches.append(
+                {
+                    "doc_id": str(doc_id),
+                    "doc_type": metadata.get("doc_type", ""),
+                    "title": metadata.get("title", ""),
+                    "score": score,
+                    "content": documents[index] if index < len(documents) else "",
+                    "metadata": metadata,
+                }
+            )
+        return matches
+
 
 vector_store = VectorStore()
+knowledge_vector_store = VectorStore(collection_name=settings.knowledge_collection_name)
 
 
 def upsert_job_embedding(job: Dict) -> Dict:
@@ -215,3 +306,11 @@ def clear_job_embeddings() -> Dict:
 
 def search_similar_jobs(query: str, top_k: int = 5) -> List[Dict]:
     return vector_store.search(query=query, top_k=top_k)
+
+
+def upsert_knowledge_documents(documents: Iterable[Dict]) -> Dict:
+    return knowledge_vector_store.upsert_documents(documents)
+
+
+def search_knowledge_documents(query: str, top_k: int = 5) -> List[Dict]:
+    return knowledge_vector_store.search_documents(query=query, top_k=top_k)

@@ -52,3 +52,4 @@ data/audit_samples/*
 data/vector_store/
 backend/data/vector_store/
 backend/data/uploads/
+backend/outputs/
