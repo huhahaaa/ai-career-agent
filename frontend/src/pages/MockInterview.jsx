@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Camera, Mic, MicOff, VideoOff } from 'lucide-react';
+import { Camera, Mic, MicOff, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { endInterview, getResumeDetail, getResumes, sendMessage, startInterview } from '../api/client';
 import RadarChart from '../components/RadarChart';
 import { mapDimensionScores } from '../utils/dimensionLabels';
@@ -46,6 +46,8 @@ export default function MockInterview() {
   const [speechStatus, setSpeechStatus] = useState('未启动');
   const [micLevel, setMicLevel] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState('');
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(true);
+  const [voiceOutputStatus, setVoiceOutputStatus] = useState('待朗读');
   const [speechStats, setSpeechStats] = useState({
     durationSeconds: 0,
     units: 0,
@@ -73,10 +75,40 @@ export default function MockInterview() {
   const poseLandmarkerRef = useRef(null);
   const visionRunningRef = useRef(false);
   const lastVisionSampleRef = useRef(0);
+  const lastSpokenMessageRef = useRef('');
 
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  const speakInterviewerText = text => {
+    if (!voiceOutputEnabled || !window.speechSynthesis || !text?.trim()) return;
+    const cleaned = text
+      .replace(/【[^】]+】/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleaned);
+    utterance.lang = 'zh-CN';
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.onstart = () => setVoiceOutputStatus('面试官正在朗读');
+    utterance.onend = () => setVoiceOutputStatus('朗读完成');
+    utterance.onerror = () => setVoiceOutputStatus('朗读失败，可继续文字面试');
+    window.speechSynthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    if (!messages.length || ended) return;
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage.role !== 'interviewer') return;
+    const key = `${lastMessage.timestamp}-${lastMessage.content}`;
+    if (lastSpokenMessageRef.current === key) return;
+    lastSpokenMessageRef.current = key;
+    speakInterviewerText(lastMessage.content);
+  }, [messages, ended, voiceOutputEnabled]);
 
   useEffect(() => {
     getResumes()
@@ -107,6 +139,7 @@ export default function MockInterview() {
 
   useEffect(() => () => {
     stopSpeechRecognition();
+    window.speechSynthesis?.cancel();
     stopCamera();
   }, []);
 
@@ -119,6 +152,17 @@ export default function MockInterview() {
     const dimensionScores = finalReport?.dimension_averages || {};
     return mapDimensionScores(dimensionScores).filter(item => item.originalName !== 'total');
   }, [finalReport]);
+
+  const speechCoachTip = useMemo(() => {
+    if (!listening && speechStats.durationSeconds === 0) return '';
+    if (speechStats.rate > 220) return '语速偏快，建议放慢并留出重点停顿。';
+    if (speechStats.longestPauseSeconds >= 5) return '停顿偏长，建议先用一句话概括再展开细节。';
+    if (speechStats.pauseCount >= 4) return '停顿较多，建议按“背景-行动-结果”组织回答。';
+    if (speechStats.rate >= 90 && speechStats.rate <= 200 && speechStats.units > 20) {
+      return '语速较稳定，可以继续保持。';
+    }
+    return '';
+  }, [listening, speechStats]);
 
   const updateSpeechStats = () => {
     const startedAt = speechStartedAtRef.current;
@@ -513,6 +557,25 @@ export default function MockInterview() {
     updateSpeechStats();
   };
 
+  const toggleVoiceOutput = () => {
+    setVoiceOutputEnabled(current => {
+      const next = !current;
+      if (!next) {
+        window.speechSynthesis?.cancel();
+        setVoiceOutputStatus('已关闭');
+      } else {
+        setVoiceOutputStatus('已开启，下一题将自动朗读');
+      }
+      return next;
+    });
+  };
+
+  const repeatLastInterviewerMessage = () => {
+    const lastInterviewerMessage = [...messages].reverse().find(message => message.role === 'interviewer');
+    if (!lastInterviewerMessage) return;
+    speakInterviewerText(lastInterviewerMessage.content);
+  };
+
   const handleStart = async () => {
     if (!resumeText.trim()) {
       setError('请先输入简历文本');
@@ -678,20 +741,27 @@ export default function MockInterview() {
           <h2>模拟面试</h2>
           <span className="text-muted">{location.state?.jobInfo?.company || '目标岗位'} - {targetPosition || '综合面试'} - {interviewMode}</span>
         </div>
-        {!ended && (
-          <button className="btn btn-danger" onClick={handleEnd} disabled={busy}>
-            {busy ? '生成报告中...' : '结束面试'}
+        <div className="interview-header-actions">
+          <button className="btn btn-sm btn-outline" onClick={toggleVoiceOutput} type="button">
+            {voiceOutputEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            {voiceOutputEnabled ? '朗读开启' : '朗读关闭'}
           </button>
-        )}
+          {!ended && (
+            <button className="btn btn-danger" onClick={handleEnd} disabled={busy}>
+              {busy ? '生成报告中...' : '结束面试'}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
-      <div className="interview-assist-panel">
-        <div className="assist-card camera-card">
+      <div className="interview-room">
+        <section className="interview-stage">
+          <div className="assist-card camera-card immersive-camera-card">
           <div className="assist-card-header">
             <div>
-              <h3>摄像头</h3>
-              <span className="text-muted">预览与视线、姿态分析</span>
+              <h3>候选人画面</h3>
+              <span className="text-muted">摄像头分析开启后会在面试中给出轻量提醒</span>
             </div>
             <button
               className="btn btn-sm btn-outline"
@@ -711,7 +781,7 @@ export default function MockInterview() {
           {cameraError && <div className="assist-warning">{cameraError}</div>}
           {visionError && <div className="assist-warning">{visionError}</div>}
 
-          <div className="assist-metrics">
+          <div className="assist-metrics compact-camera-metrics">
             <span>画面亮度：{lightingStatus}</span>
             <span>模型状态：{visionLoading ? '加载中' : visionError ? '异常' : cameraActive ? '已就绪' : '未启动'}</span>
             <span>视线：{visionAnalysis.gazeLabel}</span>
@@ -723,44 +793,39 @@ export default function MockInterview() {
           <ul className="vision-advice">
             {visionAnalysis.advice.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
-        </div>
+          </div>
 
-        <div className="assist-card voice-card">
-          <div className="assist-card-header">
+          <div className="interview-live-coach">
             <div>
-              <h3>语音输入</h3>
-              <span className="text-muted">转写、语速和停顿统计</span>
+              <strong>语音状态</strong>
+              <span>{listening ? speechStatus : '点击回答框旁的麦克风开始语音输入'}</span>
             </div>
-            <button
-              className="btn btn-sm btn-outline"
-              onClick={listening ? stopSpeechRecognition : startSpeechRecognition}
-              type="button"
-            >
-              {listening ? <MicOff size={16} /> : <Mic size={16} />}
-              {listening ? '停止' : '开始'}
-            </button>
+            <div>
+              <strong>面试官语音</strong>
+              <span>{voiceOutputEnabled ? voiceOutputStatus : '已关闭'}</span>
+            </div>
+            {speechCoachTip && <p>{speechCoachTip}</p>}
           </div>
+        </section>
 
-          {!speechSupported && <div className="assist-warning">当前浏览器不支持语音识别</div>}
-          <div className="assist-metrics voice-metrics">
-            <span>状态：{speechStatus}</span>
-            <span>麦克风：{micLevel > 6 ? '有输入' : listening ? '等待声音' : '未启动'}</span>
-            <span>时长：{speechStats.durationSeconds}s</span>
-            <span>字数：{speechStats.units}</span>
-            <span>语速：{speechStats.rate} 字/分钟</span>
-            <span>停顿：{speechStats.pauseCount} 次</span>
-            <span>最长停顿：{speechStats.longestPauseSeconds}s</span>
-          </div>
-          <div className="mic-level" aria-label="麦克风音量">
-            <div className="mic-level-bar" style={{ width: `${micLevel}%` }} />
-          </div>
-          <div className="interim-transcript">
-            {interimTranscript || '语音转写会自动填入回答框'}
-          </div>
-        </div>
-      </div>
-
-      <div className="chat-container">
+        <section className="interview-console">
+          <div className="chat-container immersive-chat-container">
+            <div className="chat-panel-top">
+              <div>
+                <strong>AI 面试官</strong>
+                <span>{voiceOutputEnabled ? voiceOutputStatus : '文字面试模式'}</span>
+              </div>
+              <div className="chat-panel-actions">
+                <button className="btn btn-sm btn-outline" type="button" onClick={repeatLastInterviewerMessage}>
+                  <Volume2 size={15} />
+                  重读题目
+                </button>
+                <div className="speech-compact-status">
+                  <span className={listening ? 'recording-dot active' : 'recording-dot'} />
+                  {listening ? speechStatus : '语音未启动'}
+                </div>
+              </div>
+            </div>
         <div className="chat-messages">
           {messages.length === 0 && (
             <div className="empty">当前面试题目未显示，请刷新页面后重新开始一次面试。</div>
@@ -790,6 +855,15 @@ export default function MockInterview() {
 
         {!ended && (
           <div className="chat-input-area">
+            <button
+              className={`voice-input-button ${listening ? 'active' : ''}`}
+              onClick={listening ? stopSpeechRecognition : startSpeechRecognition}
+              type="button"
+              title={listening ? '停止语音输入' : '开始语音输入'}
+              aria-label={listening ? '停止语音输入' : '开始语音输入'}
+            >
+              {listening ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
             <input
               value={input}
               onChange={event => setInput(event.target.value)}
@@ -800,8 +874,16 @@ export default function MockInterview() {
             <button className="btn btn-primary" onClick={handleSend} disabled={busy || !input.trim()}>
               {busy ? '分析中...' : '提交回答'}
             </button>
+            <div className="speech-inline-panel">
+              <div className="mic-level" aria-label="麦克风音量">
+                <div className="mic-level-bar" style={{ width: `${micLevel}%` }} />
+              </div>
+              <span>{interimTranscript || (listening ? '正在等待转写结果，可继续说话' : '语音会写入回答框，可手动修改后提交')}</span>
+            </div>
           </div>
         )}
+          </div>
+        </section>
       </div>
 
       {ended && (
@@ -830,6 +912,18 @@ export default function MockInterview() {
               </div>
             </div>
           )}
+          <div className="interview-media-summary">
+            <div>
+              <strong>语音表达</strong>
+              <span>语速 {speechStats.rate} 字/分钟 · 停顿 {speechStats.pauseCount} 次 · 最长停顿 {speechStats.longestPauseSeconds}s</span>
+              {speechCoachTip && <p>{speechCoachTip}</p>}
+            </div>
+            <div>
+              <strong>镜头表现</strong>
+              <span>视线 {visionAnalysis.gazeLabel} · 头部 {visionAnalysis.headPoseLabel} · 姿态 {visionAnalysis.postureLabel}</span>
+              <p>专注度：{visionAnalysis.attentionLabel} {visionAnalysis.attentionScore ? `${visionAnalysis.attentionScore} 分` : ''}</p>
+            </div>
+          </div>
           {feedback.length > 0 && (
             <ul>{feedback.map((item, index) => <li key={index}>{item}</li>)}</ul>
           )}
