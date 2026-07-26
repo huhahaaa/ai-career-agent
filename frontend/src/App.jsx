@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import ResumeUpload from './pages/ResumeUpload';
 import ResumeReview from './pages/ResumeReview';
@@ -39,8 +40,10 @@ export default function App() {
 
           {/* 受保护路由 - 需要登录才能访问 */}
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            {/* 首页数据看板 */}
-            <Route path="/" element={<Dashboard />} />
+            {/* 主页欢迎页 */}
+            <Route path="/" element={<Home />} />
+            {/* 数据看板 */}
+            <Route path="/dashboard" element={<Dashboard />} />
 
             {/* 简历管理 */}
             <Route path="/resume" element={<ResumeUpload />} />
