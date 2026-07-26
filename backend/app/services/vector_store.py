@@ -1,4 +1,4 @@
-import json
+﻿import json
 import threading
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
@@ -165,6 +165,8 @@ class VectorStore:
         matches = []
         for index, job_id in enumerate(ids):
             metadata = metadatas[index] or {}
+            if metadata.get("type") is not None and metadata["type"] in ("skill_definition", "role_profile"):
+                continue
             try:
                 skills = json.loads(metadata.get("skills_json", "[]") or "[]")
             except json.JSONDecodeError:

@@ -28,13 +28,8 @@ def read_jsonl(path: Path) -> Iterable[Dict]:
 
 def transform_job(job: Dict) -> Dict:
     return {
+        **job,
         "id": job.get("source_id", job.get("id")),
-        "title": job.get("title", ""),
-        "company": job.get("company", ""),
-        "description": job.get("responsibilities", ""),
-        "requirements": job.get("requirements", ""),
-        "source_link": job.get("source_link", ""),
-        "skills": job.get("skills", []),
     }
 
 
