@@ -1,0 +1,56 @@
+[
+  {
+    "case_id": "FAIL-001",
+    "scenario": "resume_too_short",
+    "description": "用户只提交了‘会Python，想找实习’两句文本。",
+    "input": {"resume_text": "会Python，想找实习。"},
+    "expected_system_behavior": "不直接输出高置信度匹配；提示补充教育经历、项目、技能熟练度和成果，并标记为信息不足。",
+    "audit_rule": "简历有效字段少于3类或正文长度低于80个汉字时触发人工补充提示。",
+    "severity": "medium"
+  },
+  {
+    "case_id": "FAIL-002",
+    "scenario": "job_without_source",
+    "description": "岗位记录只有标题和技能，没有来源网站、链接或核验日期。",
+    "input": {"title": "后端开发实习生", "company": "测试公司", "skills": ["Python", "API"]},
+    "expected_system_behavior": "禁止进入approved岗位池；返回缺少source_site、source_link和source_checked_at的具体字段错误。",
+    "audit_rule": "岗位必须同时具备来源网站、可追溯链接和最近核验日期。",
+    "severity": "high"
+  },
+  {
+    "case_id": "FAIL-003",
+    "scenario": "empty_match_result",
+    "description": "简历技能为‘日语翻译、乐器演奏’，岗位池只包含后端开发岗位，无法找到共同技能。",
+    "input": {"resume_skills": ["日语翻译", "乐器演奏"], "available_job_categories": ["后端开发"]},
+    "expected_system_behavior": "返回可解释的空结果；建议扩大岗位类别或补充技能，不得伪造匹配岗位。",
+    "audit_rule": "候选人技能与岗位必备/偏好技能无交集时，匹配状态为no_match并记录原因。",
+    "severity": "medium"
+  },
+  {
+    "case_id": "FAIL-004",
+    "scenario": "answer_too_short_follow_up",
+    "description": "候选人回答‘我做过一个项目，还可以’。信息不足以评价个人贡献和结果。",
+    "input": {"question_id": "Q-BE-003", "answer": "我做过一个项目，还可以。"},
+    "expected_system_behavior": "降低回答完整度评分，并追问项目目标、个人负责内容、技术方案和量化结果。",
+    "audit_rule": "回答少于30个汉字或未覆盖目标/行动/结果中的至少两项时触发追问。",
+    "severity": "medium"
+  },
+  {
+    "case_id": "FAIL-005",
+    "scenario": "resume_contains_contact_data",
+    "description": "测试导入文本中出现手机号和邮箱格式。",
+    "input": {"resume_text": "电话：13800000000，邮箱：demo@example.com"},
+    "expected_system_behavior": "导入前将联系方式替换为脱敏占位符，并记录脱敏动作，不将原始值写入样本。",
+    "audit_rule": "检测到手机号、邮箱、身份证号或详细住址时，数据不得进入共享测试集。",
+    "severity": "high"
+  },
+  {
+    "case_id": "FAIL-006",
+    "scenario": "stale_job_update",
+    "description": "岗位的source_checked_at超过复核周期，且页面状态无法确认。",
+    "input": {"source_checked_at": "2025-01-01", "page_status": "unknown"},
+    "expected_system_behavior": "标记为stale，禁止作为最新岗位推荐，并要求重新打开来源页复核。",
+    "audit_rule": "演示前发现超过复核周期或页面状态不明时，必须降级为待复核。",
+    "severity": "medium"
+  }
+]
