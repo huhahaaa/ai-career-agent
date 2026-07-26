@@ -8,6 +8,7 @@ EXPECTED_TABLES = {
     "agent_logs",
     "interview_messages",
     "interview_sessions",
+    "job_applications",
     "job_postings",
     "job_review_records",
     "matching_records",
@@ -41,4 +42,5 @@ def test_init_db_creates_core_tables_and_relationships():
         for index in database.get_indexes("job_postings")
         if index["unique"]
     }
-    assert ("source_link",) in job_unique_indexes
+    assert ("source_id",) in job_unique_indexes
+    assert ("source_link",) not in job_unique_indexes

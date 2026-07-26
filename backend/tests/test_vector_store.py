@@ -29,6 +29,9 @@ class FakeCollection:
             "metadatas": [[{
                 "title": "Python Engineer",
                 "company": "Example Inc",
+                "category": "后端开发",
+                "employment_type": "实习",
+                "workplace_type": "远程",
                 "source_link": "https://example.com/jobs/1",
                 "skills_json": '["Python", "FastAPI", "SQL"]',
             }]],
@@ -40,9 +43,12 @@ class FakeCollection:
 def approved_job():
     return {
         "source_id": "JOB-001",
+        "category": "后端开发",
         "title": "Python Engineer",
         "company": "Example Inc",
         "location": "Shanghai",
+        "employment_type": "实习",
+        "workplace_type": "远程",
         "requirements": "Build APIs with FastAPI and SQL.",
         "skills": ["Python", "FastAPI", "SQL"],
         "source_link": "https://example.com/jobs/1",
@@ -65,6 +71,7 @@ def test_collection_and_model_are_loaded_lazily():
     assert collection.upserts[0]["ids"] == ["JOB-001"]
     assert matches[0]["score"] == 82.0
     assert matches[0]["title"] == "Python Engineer"
+    assert matches[0]["category"] == "后端开发"
     assert matches[0]["skills"] == ["Python", "FastAPI", "SQL"]
 
 

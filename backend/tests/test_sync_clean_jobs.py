@@ -13,8 +13,9 @@ def write_jsonl(path, rows):
     )
 
 
-def clean_job(source_link, title, salary_range):
+def clean_job(source_link, title, salary_range, source_id=None):
     return {
+        "source_id": source_id,
         "title": title,
         "company": "Example Inc",
         "location": "Hangzhou",
@@ -82,3 +83,38 @@ def test_sync_clean_jobs_upserts_extended_fields(session_factory, tmp_path):
     assert json.loads(jobs[0].skills) == ["Python", "FastAPI", "SQL"]
     assert jobs[0].status == "approved"
     assert jobs[1].source_site == "Example Jobs"
+
+
+def test_sync_clean_jobs_keeps_distinct_source_ids_with_same_link(session_factory, tmp_path):
+    data_file = tmp_path / "jobs_chinese.jsonl"
+    write_jsonl(
+        data_file,
+        [
+            clean_job(
+                "https://join.example.com/",
+                "Backend Intern A",
+                "12k-18k",
+                source_id="CN-BE-001",
+            ),
+            clean_job(
+                "https://join.example.com/",
+                "Backend Intern B",
+                "15k-20k",
+                source_id="CN-BE-002",
+            ),
+        ],
+    )
+
+    with session_factory() as db:
+        result = sync_clean_jobs(db, read_jsonl(data_file))
+
+    with session_factory() as db:
+        jobs = db.scalars(select(JobPosting).order_by(JobPosting.source_id)).all()
+
+    assert result == {
+        "inserted_count": 2,
+        "updated_count": 0,
+        "skipped_count": 0,
+    }
+    assert [job.source_id for job in jobs] == ["CN-BE-001", "CN-BE-002"]
+    assert len({job.source_link for job in jobs}) == 1

@@ -3,6 +3,7 @@ import json
 from sqlalchemy import select
 
 from app.api.v1.endpoints import matching as matching_endpoint
+from app.services import matching as matching_service
 from app.core.security import hash_password
 from app.models.job import JobPosting
 from app.models.matching import MatchingRecord
@@ -90,6 +91,117 @@ def test_match_result_skill_gap_analysis_is_added():
     assert "Docker" in matches[0]["suggestion"]
     assert "94.0" in matches[0]["reason"]
     assert "88.9" in matches[0]["reason"]
+
+
+def test_matching_uses_role_profile_when_target_position_is_given():
+    matches = enrich_match_results(
+        "Python FastAPI REST API SQL project with backend API design.",
+        [
+            {
+                "job_id": "1",
+                "title": "Python Backend Intern",
+                "company": "Example Inc",
+                "score": 88.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/1",
+                "skills": ["Python", "FastAPI", "SQL"],
+            }
+        ],
+        target_position="Python 后端实习生",
+    )
+
+    result = matches[0]
+    assert "异常处理" in result["missing_skills"]
+    assert "Redis" in result["missing_skills"]
+    assert result["ability_breakdown"]["role_profile"]["role"] == "后端开发"
+    assert "岗位画像还提示缺口" in result["gap_analysis"]
+
+
+def test_ai_application_target_penalizes_business_role_matches():
+    matches = enrich_match_results(
+        "Python FastAPI LangChain RAG LLM API SQL 平台开发项目，负责智能客服应用开发。",
+        [
+            {
+                "job_id": "ops",
+                "title": "新媒体运营实习生",
+                "company": "Example Ops",
+                "category": "运营",
+                "score": 92.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/ops",
+                "skills": ["新媒体运营", "内容策划", "AI工具", "数据分析"],
+            },
+            {
+                "job_id": "product",
+                "title": "AI产品经理实习生",
+                "company": "Example Product",
+                "category": "产品经理",
+                "score": 91.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/product",
+                "skills": ["AI产品", "需求分析", "用户研究", "PRD", "LLM"],
+            },
+            {
+                "job_id": "backend",
+                "title": "AI应用开发工程师实习生",
+                "company": "Example Tech",
+                "category": "后端开发",
+                "score": 80.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/backend",
+                "skills": ["Python", "FastAPI", "LangChain", "RAG", "LLM", "API", "SQL"],
+            },
+        ],
+        target_position="AI应用开发工程师",
+    )
+
+    assert matches[0]["job_id"] == "backend"
+    assert matches[0]["score"] > 70
+    assert matches[1]["score"] <= 42
+    assert matches[2]["score"] <= 42
+    assert matches[1]["ability_breakdown"]["target_compatibility_score"] == 20.0
+    assert "岗位方向不匹配降权" in matches[1]["gap_analysis"]
+
+
+def test_match_resume_to_jobs_overfetches_then_reranks(monkeypatch):
+    calls = {}
+
+    def fake_search(query, top_k):
+        calls["query"] = query
+        calls["top_k"] = top_k
+        return [
+            {
+                "job_id": "ops",
+                "title": "新媒体运营实习生",
+                "company": "Example Ops",
+                "category": "运营",
+                "score": 92.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/ops",
+                "skills": ["新媒体运营", "内容策划", "AI工具", "数据分析"],
+            },
+            {
+                "job_id": "backend",
+                "title": "AI应用开发工程师实习生",
+                "company": "Example Tech",
+                "category": "后端开发",
+                "score": 80.0,
+                "reason": "semantic similarity",
+                "source_link": "https://example.com/jobs/backend",
+                "skills": ["Python", "FastAPI", "LangChain", "RAG", "LLM", "API", "SQL"],
+            },
+        ]
+
+    monkeypatch.setattr(matching_service, "search_similar_jobs", fake_search)
+
+    results = matching_service.match_resume_to_jobs(
+        "Python FastAPI LangChain RAG LLM API SQL 平台开发项目",
+        "AI应用开发工程师",
+        top_k=1,
+    )
+
+    assert calls["top_k"] == 8
+    assert results[0]["job_id"] == "backend"
 
 
 def test_match_results_are_sorted_by_weighted_score():
