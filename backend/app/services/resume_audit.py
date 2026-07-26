@@ -27,6 +27,51 @@ BIASED_PHRASES = [
     "无人能及",
     "最优秀",
 ]
+POSITION_KEYWORD_RULES = [
+    {
+        "position_terms": ["python", "后端", "backend", "服务端", "fastapi", "django"],
+        "keywords": [
+            ("pytest", ["pytest", "单元测试", "测试用例", "自动化测试"]),
+            ("JWT", ["jwt", "token", "令牌", "鉴权"]),
+            ("Redis 缓存", ["redis", "缓存"]),
+            ("Docker 部署", ["docker", "容器", "镜像"]),
+            ("Linux 部署", ["linux", "服务器部署"]),
+            ("Nginx", ["nginx", "反向代理"]),
+            ("异步任务", ["异步任务", "celery", "rq", "任务队列"]),
+            ("接口性能优化", ["接口性能", "性能优化", "压测", "慢查询"]),
+            ("日志监控", ["日志监控", "监控告警", "链路追踪", "prometheus"]),
+            ("CI/CD", ["ci/cd", "github actions", "自动化部署", "流水线"]),
+        ],
+    },
+    {
+        "position_terms": ["前端", "frontend", "react", "vue"],
+        "keywords": [
+            ("TypeScript", ["typescript", "ts"]),
+            ("组件化", ["组件化", "组件库"]),
+            ("状态管理", ["状态管理", "redux", "pinia", "zustand"]),
+            ("前端工程化", ["工程化", "vite", "webpack"]),
+            ("性能优化", ["性能优化", "首屏", "懒加载"]),
+            ("接口联调", ["接口联调", "api 联调"]),
+            ("自动化测试", ["jest", "vitest", "自动化测试"]),
+        ],
+    },
+    {
+        "position_terms": ["agent", "llm", "rag", "智能体", "大模型"],
+        "keywords": [
+            ("Prompt 设计", ["prompt", "提示词"]),
+            ("RAG", ["rag", "检索增强"]),
+            ("向量数据库", ["向量数据库", "向量检索", "chromadb", "faiss"]),
+            ("工具调用", ["工具调用", "function calling", "tool calling"]),
+            ("Agent 日志", ["agent 日志", "智能体日志"]),
+            ("结果评测", ["评测", "打分", "benchmark"]),
+        ],
+    },
+]
+GENERAL_KEYWORDS = [
+    ("Git 协作", ["git", "分支", "pull request", "merge"]),
+    ("接口文档", ["swagger", "openapi", "接口文档"]),
+    ("异常处理", ["异常处理", "错误处理"]),
+]
 
 
 def _find_vague_phrases(text: str) -> List[str]:
@@ -75,9 +120,10 @@ def audit_resume_text(resume_text: str, target_position: str = "") -> Dict[str, 
     if not suggestions:
         suggestions.append("补充项目背景、个人职责、技术动作和量化结果。")
 
-    missing_keywords = llm_result.get("missing_keywords", [])
-    if target_position and not missing_keywords:
-        missing_keywords = _extract_missing_keywords(resume_text, target_position)
+    missing_keywords = _merge_missing_keywords(
+        llm_result.get("missing_keywords", []),
+        _extract_missing_keywords(resume_text, target_position),
+    )
 
     return {
         "score": final_score,
@@ -135,19 +181,43 @@ def _llm_deep_audit(resume_text: str, target_position: str) -> Dict[str, Any]:
 
 
 def _extract_missing_keywords(resume_text: str, target_position: str) -> List[str]:
-    prompt = f"""目标岗位：{target_position}
-简历内容：{resume_text[:2000]}
+    text = (resume_text or "").lower()
+    position = (target_position or "").lower()
+    candidates = []
 
-请列出 3-5 个该岗位通常需要但简历中缺失的技能关键词。
-只输出 JSON 数组：["关键词1", "关键词2"]"""
-    result = _safe_call_llm(
-        system_prompt="你是招聘专家。只输出 JSON 数组。",
-        user_prompt=prompt,
-        fallback="[]",
-        temperature=0.3,
-    )
-    parsed = _parse_json_fallback(result)
-    return parsed if isinstance(parsed, list) else []
+    for rule in POSITION_KEYWORD_RULES:
+        if any(term.lower() in position for term in rule["position_terms"]):
+            candidates.extend(rule["keywords"])
+
+    candidates.extend(GENERAL_KEYWORDS)
+    return [
+        keyword
+        for keyword, aliases in candidates
+        if not _contains_any_alias(text, keyword, aliases)
+    ][:8]
+
+
+def _contains_any_alias(text: str, keyword: str, aliases: List[str]) -> bool:
+    values = [keyword, *aliases]
+    return any(str(value).lower() in text for value in values if value)
+
+
+def _merge_missing_keywords(*groups: Any) -> List[str]:
+    merged: List[str] = []
+    seen = set()
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            keyword = str(item).strip()
+            if not keyword:
+                continue
+            key = keyword.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(keyword)
+    return merged[:8]
 
 
 def _determine_risk_level(score: int, issues: List[str]) -> str:

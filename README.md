@@ -4,33 +4,39 @@ AI Career Agent 是一个面向课程综合项目的求职辅助平台，目标�
 
 ## 当前进度
 
-项目已从“框架搭建”推进到“数据、前端、向量检索联调”阶段。当前主线 `main` 可以作为阶段展示版本继续往后开发。
+项目已从“框架搭建”推进到“核心闭环 + 第二阶段增强”阶段。当前主线
+`main` 可以完成注册登录、岗位审核、向量匹配、简历审核、Agent 模拟面试、
+报告生成、历史记录和数据看板的阶段展示。
 
 已完成内容：
 
 - 后端基础：Python 3.11 + FastAPI + SQLAlchemy + SQLite。
-- 用户认证：注册、登录、JWT Bearer Token、当前用户查询。
-- 权限控制：普通学生账号与审核员账号，支持审核员专用接口。
+- 用户认证：注册、登录、退出、JWT Bearer Token、当前用户查询。
+- 权限控制：普通学生账号与审核员账号，支持岗位审核和审核员统计接口。
 - 数据材料：岗位原始数据、清洗后数据、审核记录、角色画像、技能词典。
 - 岗位审核：岗位导入、列表查询、审核状态流转、已审核岗位查询。
 - 向量检索：Chroma + SentenceTransformer，审核通过岗位可进入向量索引。
-- 岗位匹配：根据简历或求职意向返回岗位、匹配分数、推荐理由和数据来源。
-- 模拟面试：支持开始面试、提交回答并获得基础反馈。
-- 前端联调：React/Vite 页面已接入认证、岗位、匹配、简历和面试相关入口。
+- 岗位匹配：根据简历或求职意向返回岗位、匹配分数、推荐理由和数据来源，并保存匹配历史。
+- 简历管理：支持简历文件上传、列表、详情、版本记录、删除和简历审核报告保存。
+- 面试 Agent：支持 8 题生成、回答追问、结构化评分、STAR 改写建议、练习计划和最终报告保存。
+- Agent 日志：面试启动、回答评分、报告生成和简历审核会写入 `agent_logs`。
+- 数据看板：后端提供真实统计，前端展示简历数、岗位数、面试次数、平均分、技能分布、城市分布和最近面试。
+- 前端联调：React/Vite 页面已接入认证、岗位、匹配、简历、面试、历史和看板入口。
 - 测试验证：后端 pytest 通过，前端生产构建通过。
 
 待完成内容：
 
-- 简历文件上传、解析、版本管理和持久化。
-- 面试历史、评分报告和训练建议持久化。
-- 更完整的面试题库、STAR 评分规则和能力维度分析。
-- 管理端统计看板、岗位收藏、投递跟踪等扩展功能。
+- 更完整的 RAG 知识库、岗位能力模型、面试题库和引用来源展示。
+- HR 面、技术面、压力面和反馈教练等多 Agent 面试模式。
+- 匹配结果中的命中技能、缺失技能、能力缺口和修改建议。
+- 简历版本对比、岗位收藏、投递跟踪和训练计划看板。
+- 语音输入/输出、实时面试、摄像头姿态分析等进阶能力。
 - 最终报告、PPT、演示视频和三天项目日报整理。
 
 ## 核心流程
 
 ```text
-岗位采集/导入 -> 清洗与技能提取 -> 岗位审核 -> 向量化入库 -> 简历审核 -> 岗位匹配 -> 模拟面试 -> 评分报告
+岗位采集/导入 -> 清洗与技能提取 -> 岗位审核 -> 向量化入库 -> 简历上传/粘贴 -> 简历审核 -> 岗位匹配 -> Agent 模拟面试 -> 评分报告 -> 历史记录/数据看板
 ```
 
 ## 技术框架
@@ -58,6 +64,26 @@ ai-career-agent/
 
 ## 本地启动
 
+推荐直接双击项目根目录的一键脚本：
+
+```text
+start-dev.bat
+```
+
+停止本地服务：
+
+```text
+stop-dev.bat
+```
+
+脚本会启动：
+
+- 后端：http://127.0.0.1:8000
+- 前端：http://localhost:5173
+- 接口文档：http://127.0.0.1:8000/docs
+
+如需手动启动：
+
 后端：
 
 ```powershell
@@ -67,6 +93,17 @@ cd D:\PythonProject\ai-career-agent\backend
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000
 ```
 
+如需启用 DeepSeek，在 `backend/.env` 中配置：
+
+```env
+LLM_PROVIDER=deepseek
+LLM_API_KEY=你的 DeepSeek API Key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-chat
+```
+
+自动化测试会固定使用本地 mock 兜底，避免真实模型输出导致测试不稳定。
+
 如需创建审核员账号：
 
 ```powershell
@@ -74,11 +111,11 @@ cd D:\PythonProject\ai-career-agent\backend
 .\.venv\Scripts\python.exe -m app.commands.create_reviewer --username reviewer --email reviewer@example.com
 ```
 
-导入已审核岗位到向量库：
+同步清洗后的岗位数据到数据库，并重建已审核岗位向量索引：
 
 ```powershell
 cd D:\PythonProject\ai-career-agent\backend
-.\.venv\Scripts\python.exe scripts\index_jobs.py ..\data\processed\jobs_clean.jsonl
+.\.venv\Scripts\python.exe scripts\sync_clean_jobs.py ..\data\processed\jobs_clean.jsonl --rebuild-index
 ```
 
 前端：

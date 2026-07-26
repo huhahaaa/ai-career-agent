@@ -6,12 +6,22 @@ from app.services.vector_store import VectorStore
 class FakeCollection:
     def __init__(self):
         self.upserts = []
+        self.ids = []
+        self.deleted_ids = []
 
     def upsert(self, **payload):
         self.upserts.append(payload)
+        self.ids = payload["ids"]
 
     def count(self):
-        return 1
+        return len(self.ids)
+
+    def get(self):
+        return {"ids": self.ids}
+
+    def delete(self, **payload):
+        self.deleted_ids.extend(payload["ids"])
+        self.ids = [job_id for job_id in self.ids if job_id not in payload["ids"]]
 
     def query(self, **_payload):
         return {
@@ -20,6 +30,7 @@ class FakeCollection:
                 "title": "Python Engineer",
                 "company": "Example Inc",
                 "source_link": "https://example.com/jobs/1",
+                "skills_json": '["Python", "FastAPI", "SQL"]',
             }]],
             "distances": [[0.18]],
             "documents": [["Python FastAPI SQL"]],
@@ -54,6 +65,7 @@ def test_collection_and_model_are_loaded_lazily():
     assert collection.upserts[0]["ids"] == ["JOB-001"]
     assert matches[0]["score"] == 82.0
     assert matches[0]["title"] == "Python Engineer"
+    assert matches[0]["skills"] == ["Python", "FastAPI", "SQL"]
 
 
 def test_unapproved_job_is_rejected_before_vector_store_loads():
@@ -80,3 +92,15 @@ def test_batch_index_skips_unapproved_jobs():
         "skipped_count": 1,
         "job_ids": ["JOB-001"],
     }
+
+
+def test_clear_deletes_existing_vectors():
+    collection = FakeCollection()
+    store = VectorStore(collection_factory=lambda: collection)
+
+    store.upsert_job(approved_job())
+    result = store.clear()
+
+    assert result == {"deleted_count": 1}
+    assert collection.deleted_ids == ["JOB-001"]
+    assert collection.count() == 0

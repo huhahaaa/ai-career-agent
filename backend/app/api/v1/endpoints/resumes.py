@@ -3,17 +3,25 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
 from app.core.exceptions import AppException
 from app.db.session import get_db
-from app.models.resume import Resume, ResumeAuditReport, ResumeVersion
+from app.models.resume import RESUME_SOURCE_FORMAL, Resume, ResumeAuditReport, ResumeVersion
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
 from app.schemas.resume import ResumeAuditRequest, ResumeAuditResult
+from app.services.agent_logging import agent_operation_log
 from app.services.resume_audit import audit_resume_text
+from app.services.resume_selection import (
+    ensure_default_resume,
+    formal_resume_query,
+    get_user_formal_resume,
+    latest_resume_version,
+    make_default_resume,
+    user_has_default_resume,
+)
 
 router = APIRouter()
 
@@ -22,19 +30,59 @@ MAX_RESUME_BYTES = 5 * 1024 * 1024
 UPLOAD_ROOT = Path("data/uploads/resumes")
 
 
-def _latest_version(resume: Resume) -> ResumeVersion | None:
-    return resume.versions[-1] if resume.versions else None
+def _latest_report(resume: Resume) -> ResumeAuditReport | None:
+    if not resume.audit_reports:
+        return None
+    return max(resume.audit_reports, key=lambda report: report.id or 0)
+
+
+def _load_json_list(value: str) -> list:
+    if not value:
+        return []
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
+def _risk_level(score: int, risk_flags: list) -> str:
+    if score < 50 or len(risk_flags) >= 5:
+        return "高"
+    if score < 70 or len(risk_flags) >= 2:
+        return "中"
+    return "低"
+
+
+def _audit_report_to_response(report: ResumeAuditReport) -> dict:
+    risk_flags = _load_json_list(report.risk_flags)
+    suggestions = _load_json_list(report.suggestions)
+    return {
+        "id": report.id,
+        "score": report.score,
+        "risk_flags": risk_flags,
+        "suggestions": suggestions,
+        "missing_keywords": _load_json_list(report.missing_keywords),
+        "risk_level": _risk_level(report.score, risk_flags),
+        "created_at": report.created_at,
+    }
 
 
 def _resume_summary(resume: Resume) -> dict:
-    latest = _latest_version(resume)
-    latest_report = resume.audit_reports[-1] if resume.audit_reports else None
+    latest = latest_resume_version(resume)
+    latest_report = _latest_report(resume)
     return {
         "id": resume.id,
         "filename": latest.file_name if latest else resume.title,
         "version": resume.current_version_number,
+        "source_type": resume.source_type,
+        "is_default": bool(resume.is_default),
         "status": "approved" if latest_report else "pending",
-        "review_comment": "已生成审核报告" if latest_report else "已保存，等待审核",
+        "review_comment": (
+            "已生成审核报告，综合评分 %s 分" % latest_report.score
+            if latest_report
+            else "已保存，等待审核"
+        ),
         "created_at": resume.created_at,
     }
 
@@ -43,7 +91,7 @@ def _decode_uploaded_text(content: bytes, filename: str) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix in {".txt", ".md"}:
         return content.decode("utf-8", errors="ignore")
-    return "已上传文件：%s。文件解析将在后续简历解析模块接入。" % filename
+    return ""
 
 
 @router.get("", response_model=ApiResponse[List[dict]])
@@ -52,8 +100,7 @@ def list_resumes(
     db: Session = Depends(get_db),
 ) -> ApiResponse[List[dict]]:
     resumes = db.scalars(
-        select(Resume)
-        .where(Resume.user_id == current_user.id)
+        formal_resume_query(current_user.id)
         .order_by(Resume.updated_at.desc(), Resume.id.desc())
     ).all()
     return success_response([_resume_summary(resume) for resume in resumes])
@@ -79,6 +126,8 @@ async def upload_resume(
         user_id=current_user.id,
         title=file.filename or "resume",
         current_version_number=1,
+        source_type=RESUME_SOURCE_FORMAL,
+        is_default=not user_has_default_resume(db, current_user.id),
     )
     db.add(resume)
     db.flush()
@@ -109,9 +158,8 @@ def resume_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[dict]:
-    resume = db.get(Resume, resume_id)
-    if resume is None or resume.user_id != current_user.id:
-        raise AppException(404, 40403, "resume not found")
+    resume = get_user_formal_resume(db, current_user, resume_id)
+    latest_report = _latest_report(resume)
     return success_response(
         {
             **_resume_summary(resume),
@@ -125,6 +173,19 @@ def resume_detail(
                 }
                 for version in resume.versions
             ],
+            "latest_report": (
+                _audit_report_to_response(latest_report)
+                if latest_report is not None
+                else None
+            ),
+            "audit_reports": [
+                _audit_report_to_response(report)
+                for report in sorted(
+                    resume.audit_reports,
+                    key=lambda item: item.id or 0,
+                    reverse=True,
+                )
+            ],
         }
     )
 
@@ -135,16 +196,29 @@ def delete_resume(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ApiResponse[None]:
-    resume = db.get(Resume, resume_id)
-    if resume is None or resume.user_id != current_user.id:
-        raise AppException(404, 40403, "resume not found")
+    resume = get_user_formal_resume(db, current_user, resume_id)
     files = [Path(version.file_path) for version in resume.versions if version.file_path]
     db.delete(resume)
+    db.flush()
+    ensure_default_resume(db, current_user.id)
     db.commit()
     for path in files:
         if path.exists() and UPLOAD_ROOT.resolve() in path.resolve().parents:
             path.unlink()
     return success_response(message="resume deleted")
+
+
+@router.patch("/{resume_id}/default", response_model=ApiResponse[dict])
+def set_default_resume(
+    resume_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict]:
+    resume = get_user_formal_resume(db, current_user, resume_id)
+    make_default_resume(db, current_user, resume)
+    db.commit()
+    db.refresh(resume)
+    return success_response(_resume_summary(resume), message="default resume updated")
 
 
 @router.post("/audit", response_model=ApiResponse[ResumeAuditResult])
@@ -155,11 +229,24 @@ def audit_resume(
 ) -> ApiResponse[ResumeAuditResult]:
     resume_id = payload.resume_id
     if resume_id is not None:
-        resume = db.get(Resume, resume_id)
-        if resume is None or resume.user_id != current_user.id:
-            raise AppException(404, 40403, "resume not found")
+        get_user_formal_resume(db, current_user, resume_id)
 
-    result = audit_resume_text(payload.resume_text, payload.target_position)
+    with agent_operation_log(
+        db,
+        user_id=current_user.id,
+        operation="resume.audit",
+        request_summary={
+            "resume_id": resume_id,
+            "target_position": payload.target_position,
+            "resume_chars": len(payload.resume_text),
+        },
+    ) as log_context:
+        result = audit_resume_text(payload.resume_text, payload.target_position)
+        log_context["response_summary"] = {
+            "score": result.get("score"),
+            "risk_level": result.get("risk_level"),
+            "risk_count": len(result.get("risk_flags", [])),
+        }
     db.add(
         ResumeAuditReport(
             user_id=current_user.id,
@@ -167,6 +254,10 @@ def audit_resume(
             score=result["score"],
             risk_flags=json.dumps(result["risk_flags"], ensure_ascii=False),
             suggestions=json.dumps(result["suggestions"], ensure_ascii=False),
+            missing_keywords=json.dumps(
+                result.get("missing_keywords", []),
+                ensure_ascii=False,
+            ),
         )
     )
     db.commit()

@@ -11,6 +11,12 @@ class JobCreate(BaseModel):
     publish_time: str
     skills: List[str]
     source_link: HttpUrl
+    salary_range: str = ""
+    education: str = ""
+    experience: str = ""
+    responsibilities: str = ""
+    requirements: str = ""
+    source_site: str = ""
 
 
 class JobPostingOut(JobCreate):

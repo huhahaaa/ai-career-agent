@@ -48,8 +48,14 @@ def job_payload(source_link="https://example.com/jobs/persisted-python"):
         "title": "Python Backend Intern",
         "company": "Example Inc",
         "location": "Hangzhou",
+        "salary_range": "12k-18k",
+        "education": "本科",
+        "experience": "应届",
+        "responsibilities": "负责 FastAPI 后端接口开发和数据库设计。",
+        "requirements": "熟悉 Python、SQL 和 Git。",
         "publish_time": "2026-07-24",
         "skills": ["Python", "FastAPI", "SQL"],
+        "source_site": "Example Jobs",
         "source_link": source_link,
     }
 
@@ -66,14 +72,20 @@ def test_imported_job_is_persisted_and_listed(client, session_factory):
 
     assert response.status_code == 200
     assert response.json()["data"]["status"] == "pending"
+    assert response.json()["data"]["salary_range"] == "12k-18k"
+    assert response.json()["data"]["education"] == "本科"
+    assert response.json()["data"]["experience"] == "应届"
+    assert response.json()["data"]["source_site"] == "Example Jobs"
     assert list_response.status_code == 200
     assert list_response.json()["data"][0]["skills"] == ["Python", "FastAPI", "SQL"]
+    assert list_response.json()["data"][0]["requirements"] == "熟悉 Python、SQL 和 Git。"
 
     with session_factory() as db:
         jobs = db.scalars(select(JobPosting)).all()
         assert len(jobs) == 1
         assert jobs[0].title == "Python Backend Intern"
         assert jobs[0].status == "pending"
+        assert jobs[0].salary_range == "12k-18k"
 
 
 def test_duplicate_job_source_link_is_rejected(client):

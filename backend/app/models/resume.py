@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -11,6 +12,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
+
+RESUME_SOURCE_FORMAL = "formal"
+RESUME_SOURCE_MATCHING_SNAPSHOT = "matching_snapshot"
+RESUME_SOURCE_INTERVIEW_SNAPSHOT = "interview_snapshot"
+RESUME_SNAPSHOT_SOURCES = {
+    RESUME_SOURCE_MATCHING_SNAPSHOT,
+    RESUME_SOURCE_INTERVIEW_SNAPSHOT,
+}
 
 
 class Resume(Base):
@@ -25,6 +34,13 @@ class Resume(Base):
     )
     title = Column(String(128), nullable=False)
     current_version_number = Column(Integer, default=1, nullable=False)
+    source_type = Column(
+        String(32),
+        default=RESUME_SOURCE_FORMAL,
+        nullable=False,
+        index=True,
+    )
+    is_default = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
@@ -93,6 +109,7 @@ class ResumeAuditReport(Base):
     score = Column(Integer, nullable=False)
     risk_flags = Column(Text, default="[]", nullable=False)
     suggestions = Column(Text, default="[]", nullable=False)
+    missing_keywords = Column(Text, default="[]", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="resume_audit_reports")
