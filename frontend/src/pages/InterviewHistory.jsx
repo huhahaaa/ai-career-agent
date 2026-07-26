@@ -1,12 +1,45 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { FileBarChart, Mic, Play, Star, Trophy, X } from 'lucide-react';
+import { CheckCircle2, FileBarChart, Mic, Play, Star, Target, Trophy, X } from 'lucide-react';
 import { getInterviewHistory, getInterviewReport } from '../api/client';
 
 const scoreColor = score => (
   score == null ? 'var(--text-muted)' : score >= 80 ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--error)'
 );
+
+const DIMENSION_LABELS = {
+  content_relevance: '内容相关度',
+  professional_accuracy: '专业准确性',
+  clarity: '表达清晰度',
+  star_completeness: 'STAR完整度',
+  position_match: '岗位匹配度',
+  total: '综合得分',
+};
+
+const DIMENSION_MAX = {
+  content_relevance: 25,
+  professional_accuracy: 25,
+  clarity: 20,
+  star_completeness: 20,
+  position_match: 10,
+  total: 100,
+};
+
+function formatDateTime(value) {
+  return value ? new Date(value).toLocaleString('zh-CN') : '-';
+}
+
+function dimensionRows(report) {
+  return Object.entries(report?.dimension_averages || {})
+    .filter(([key, value]) => key !== 'total' && typeof value === 'number')
+    .map(([key, value]) => ({
+      key,
+      label: DIMENSION_LABELS[key] || key,
+      value,
+      max: DIMENSION_MAX[key] || 100,
+    }));
+}
 
 export default function InterviewHistory() {
   const [interviews, setInterviews] = useState([]);
@@ -170,9 +203,9 @@ export default function InterviewHistory() {
       {/* 面试报告弹窗 */}
       {selectedReport && (
         <div className="modal-overlay" onClick={() => setSelectedReport(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal report-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>面试报告 - {selectedReport.company}</h3>
+              <h3>面试报告 - {selectedReport.company || '模拟面试'}</h3>
               <button className="btn btn-sm btn-outline" onClick={() => setSelectedReport(null)}>
                 <X size={14} />
               </button>
@@ -181,56 +214,117 @@ export default function InterviewHistory() {
               <div className="loading">加载报告中...</div>
             ) : (
               <div className="modal-body">
-                <div className="result-score">
+                <div className="report-hero">
                   <div className="score-circle large" style={{ borderColor: scoreColor(selectedReport.score) }}>
                     <span className="score-num">{selectedReport.score == null ? '--' : selectedReport.score}</span>
                     <span className="score-unit">分</span>
+                  </div>
+                  <div className="report-hero-content">
+                    <span className="tag tag-primary">{selectedReport.mode || selectedReport.agent_report?.interview_mode || '模拟面试'}</span>
+                    <h4>{selectedReport.job_title || '未关联岗位'}</h4>
+                    <p>{selectedReport.agent_report?.summary || selectedReport.feedback?.overall || selectedReport.feedback || '暂无总体评价。'}</p>
                   </div>
                 </div>
 
                 <div className="report-grid">
                   <div className="report-item"><strong>岗位：</strong>{selectedReport.job_title}</div>
                   <div className="report-item"><strong>时长：</strong>{selectedReport.duration_minutes == null ? '--' : `${selectedReport.duration_minutes}分钟`}</div>
-                  <div className="report-item"><strong>题数：</strong>{selectedReport.questions_count}题</div>
-                  <div className="report-item"><strong>日期：</strong>{new Date(selectedReport.created_at).toLocaleDateString()}</div>
+                  <div className="report-item"><strong>题数：</strong>{selectedReport.questions_count || selectedReport.total_questions || 0}题</div>
+                  <div className="report-item"><strong>日期：</strong>{formatDateTime(selectedReport.created_at)}</div>
                 </div>
+
+                {dimensionRows(selectedReport.agent_report).length > 0 && (
+                  <div className="report-section">
+                    <div className="report-section-title">
+                      <Target size={16} />
+                      <h4>能力维度画像</h4>
+                    </div>
+                    <div className="report-dimension-list">
+                      {dimensionRows(selectedReport.agent_report).map(item => (
+                        <div className="report-dimension-row" key={item.key}>
+                          <span>{item.label}</span>
+                          <div className="dimension-bar-wrap">
+                            <div
+                              className="dimension-bar"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, (item.value / item.max) * 100))}%`,
+                                background: scoreColor((item.value / item.max) * 100),
+                              }}
+                            />
+                          </div>
+                          <strong>{item.value}/{item.max}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {selectedReport.feedback && (
                   <>
-                    <div className="feedback-section">
+                    <div className="report-section">
                       <h4>总体评价</h4>
-                      <p>{selectedReport.feedback.overall}</p>
+                      <p>{selectedReport.feedback.overall || selectedReport.feedback}</p>
                     </div>
-                    <div className="feedback-section">
-                      <h4>优势</h4>
-                      <ul>
-                        {selectedReport.feedback.strengths?.map((s, i) => <li key={i}>{s}</li>)}
-                      </ul>
-                    </div>
-                    <div className="feedback-section">
-                      <h4>待改进</h4>
-                      <ul>
-                        {selectedReport.feedback.weaknesses?.map((w, i) => <li key={i}>{w}</li>)}
-                      </ul>
+                    <div className="report-two-column">
+                      <div className="report-section">
+                        <h4>优势</h4>
+                        <ul>
+                          {selectedReport.feedback.strengths?.map((s, i) => <li key={i}>{s}</li>)}
+                        </ul>
+                      </div>
+                      <div className="report-section">
+                        <h4>待改进</h4>
+                        <ul>
+                          {selectedReport.feedback.weaknesses?.map((w, i) => <li key={i}>{w}</li>)}
+                        </ul>
+                      </div>
                     </div>
                   </>
                 )}
                 {selectedReport.agent_report && (
                   <>
-                    <div className="feedback-section">
+                    {selectedReport.agent_report.details?.length > 0 && (
+                      <div className="report-section">
+                        <div className="report-section-title">
+                          <CheckCircle2 size={16} />
+                          <h4>逐题反馈</h4>
+                        </div>
+                        <div className="question-review-list">
+                          {selectedReport.agent_report.details.map((item, index) => (
+                            <div className="question-review-card" key={`${item.question}-${index}`}>
+                              <div className="question-review-header">
+                                <strong>第 {index + 1} 题</strong>
+                                <span style={{ color: scoreColor(item.scores?.total) }}>{item.scores?.total ?? '--'} 分</span>
+                              </div>
+                              <p>{item.question}</p>
+                              {item.scores?.overall_comment && <small>{item.scores.overall_comment}</small>}
+                              {(item.scores?.strengths || item.scores?.issues || item.scores?.improvement_suggestions) && (
+                                <div className="question-feedback-grid">
+                                  {item.scores?.strengths && <div><b>优点</b><span>{item.scores.strengths}</span></div>}
+                                  {item.scores?.issues && <div><b>问题</b><span>{item.scores.issues}</span></div>}
+                                  {item.scores?.improvement_suggestions && <div><b>建议</b><span>{item.scores.improvement_suggestions}</span></div>}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="report-section">
                       <h4>STAR 改写建议</h4>
-                      <ul>
+                      <div className="star-suggestion-list">
                         {selectedReport.agent_report.star_suggestions?.map((item, index) => (
-                          <li key={index}>
+                          <div className="star-suggestion-card" key={index}>
                             <strong>{item.question}</strong>
                             <p style={{ whiteSpace: 'pre-wrap' }}>{item.star_rewrite}</p>
-                          </li>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
                     </div>
-                    <div className="feedback-section">
+                    <div className="report-section">
                       <h4>下一步练习计划</h4>
-                      <p style={{ whiteSpace: 'pre-wrap' }}>{selectedReport.agent_report.practice_plan}</p>
+                      <div className="practice-plan-output">{selectedReport.agent_report.practice_plan}</div>
                     </div>
                   </>
                 )}

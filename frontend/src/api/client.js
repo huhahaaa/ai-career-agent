@@ -184,19 +184,61 @@ export function setDefaultResume(id) {
   );
 }
 
+export function createResumeVersion(id, { content, fileName = 'edited-resume.txt' }) {
+  return mockFallback(
+    () => request(`/resumes/${id}/versions`, {
+      method: 'POST',
+      body: JSON.stringify({ content, file_name: fileName }),
+    }),
+    () => ({
+      id,
+      version: 2,
+      versions: [{ version: 1, content: '' }, { version: 2, filename: fileName, content }],
+    }),
+  );
+}
+
+export function compareResumeVersions(id, fromVersion, toVersion, targetPosition = '') {
+  const query = new URLSearchParams({
+    from_version: String(fromVersion),
+    to_version: String(toVersion),
+    target_position: targetPosition,
+  });
+  return mockFallback(
+    () => request(`/resumes/${id}/compare?${query.toString()}`),
+    () => ({
+      resume_id: id,
+      from_version: fromVersion,
+      to_version: toVersion,
+      score_delta: 8,
+      coverage_delta: 15,
+      added_skills: ['Docker', 'Redis'],
+      removed_skills: [],
+      resolved_missing_keywords: ['Docker'],
+      new_missing_keywords: [],
+      before: { estimated_match_score: 68, missing_keywords: ['Docker', 'Redis'], skills: ['Python'] },
+      after: { estimated_match_score: 76, missing_keywords: [], skills: ['Python', 'Docker', 'Redis'] },
+    }),
+  );
+}
+
 export function getResumeDetail(id) {
   return mockFallback(() => request(`/resumes/${id}`), () => null);
 }
 
-export function auditResume({ resumeId = null, resumeText, targetPosition = '' }) {
+export function auditResume({ resumeId = null, resumeText, targetPosition = '', resumeVersion = null }) {
+  const payload = {
+    resume_id: resumeId,
+    resume_text: resumeText,
+    target_position: targetPosition,
+  };
+  if (resumeVersion) {
+    payload.resume_version = Number(resumeVersion);
+  }
   return mockFallback(
     () => request('/resumes/audit', {
       method: 'POST',
-      body: JSON.stringify({
-        resume_id: resumeId,
-        resume_text: resumeText,
-        target_position: targetPosition,
-      }),
+      body: JSON.stringify(payload),
     }),
     () => ({
       score: 76,
@@ -246,6 +288,20 @@ export function updateJobStatus(id, status, comment = '') {
       return mockJobs.find(job => String(job.id) === String(id));
     },
   );
+}
+
+export function updateJobApplication(id, data) {
+  return mockFallback(
+    () => request(`/jobs/${id}/application`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+    () => ({ id, ...data }),
+  );
+}
+
+export function getJobApplications() {
+  return mockFallback(() => request('/jobs/applications'), () => []);
 }
 
 export async function batchImportJobs(data) {
@@ -349,6 +405,19 @@ export function getInterviewHistory() {
 
 export function getInterviewReport(id) {
   return mockFallback(() => request(`/interviews/${id}/report`), () => null);
+}
+
+export function getTrainingPlan() {
+  return mockFallback(
+    () => request('/interviews/training-plan'),
+    () => ({
+      total_completed: 0,
+      average_score: null,
+      latest_score: null,
+      priority_dimensions: [],
+      plans: [],
+    }),
+  );
 }
 
 export function getCityDistribution() {
