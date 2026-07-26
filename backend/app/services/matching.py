@@ -6,6 +6,7 @@ from app.services.vector_store import (
     upsert_approved_job_embeddings,
     upsert_job_embedding,
 )
+from app.services.knowledge_base import merge_unique, role_profile_gap
 
 SEMANTIC_SCORE_WEIGHT = 0.6
 SKILL_COVERAGE_SCORE_WEIGHT = 0.4
@@ -93,6 +94,43 @@ DIRECTION_RULES = {
         "cms",
     ],
 }
+
+ROLE_CATEGORY_MAP = {
+    "前端开发": "frontend",
+    "后端开发": "backend",
+    "算法/机器学习": "machine_learning",
+    "产品经理": "product",
+    "运营": "operations",
+    "数字媒体/内容": "content",
+}
+
+ROLE_LABELS = {
+    "backend": "后端/服务端",
+    "frontend": "前端",
+    "machine_learning": "算法/机器学习",
+    "system": "系统工程",
+    "product": "产品",
+    "operations": "运营",
+    "content": "内容/数字媒体",
+}
+
+TECHNICAL_ROLES = {"backend", "frontend", "machine_learning", "system"}
+BUSINESS_ROLES = {"product", "operations", "content"}
+
+AI_APPLICATION_KEYWORDS = [
+    "ai应用",
+    "ai 应用",
+    "大模型应用",
+    "llm应用",
+    "llm 应用",
+    "智能体开发",
+    "agent开发",
+    "agent 开发",
+    "rag",
+    "langchain",
+]
+
+ENGINEERING_KEYWORDS = ["开发", "工程师", "研发", "程序", "技术", "应用"]
 
 PROGRAMMING_LANGUAGE_KEYS = {
     "python",
@@ -195,6 +233,115 @@ def _detect_directions(text: str) -> List[str]:
         if any(_contains_skill(text, keyword) for keyword in keywords):
             directions.append(direction)
     return directions
+
+
+def _has_any(text: str, keywords: List[str]) -> bool:
+    return any(_contains_skill(text, keyword) for keyword in keywords)
+
+
+def _unique_roles(roles: Iterable[str]) -> List[str]:
+    result = []
+    seen = set()
+    for role in roles:
+        if not role or role in seen:
+            continue
+        seen.add(role)
+        result.append(role)
+    return result
+
+
+def _target_role_groups(target_position: str) -> List[str]:
+    text = str(target_position or "")
+    if not text.strip():
+        return []
+
+    roles = []
+    if _has_any(text, ["运营", "增长", "新媒体", "用户运营", "产品运营"]):
+        roles.append("operations")
+    if _has_any(text, ["产品经理", "ai产品", "产品"]) and "operations" not in roles:
+        roles.append("product")
+    if _has_any(text, ["内容", "数字媒体", "视频", "剪辑", "文案", "设计"]):
+        roles.append("content")
+    if _has_any(text, ["前端", "frontend", "web开发", "web 开发", "react", "vue"]):
+        roles.append("frontend")
+    if _has_any(text, ["后端", "服务端", "backend", "fastapi", "django", "java开发", "python开发"]):
+        roles.append("backend")
+    if _has_any(text, ["算法", "机器学习", "深度学习", "模型训练", "推荐算法", "nlp算法"]):
+        roles.append("machine_learning")
+
+    is_ai_application = _has_any(text, AI_APPLICATION_KEYWORDS)
+    is_engineering = _has_any(text, ENGINEERING_KEYWORDS)
+    if is_ai_application and is_engineering:
+        roles.append("backend")
+
+    if not roles:
+        roles.extend(_detect_directions(text))
+    return _unique_roles(roles)
+
+
+def _job_role_groups(match: Dict, job_skills: List[str]) -> List[str]:
+    category = str(match.get("category") or "").strip()
+    mapped = ROLE_CATEGORY_MAP.get(category)
+    if mapped:
+        return [mapped]
+
+    title = str(match.get("title") or "")
+    if _has_any(title, ["运营", "增长", "新媒体运营", "用户运营", "产品运营"]):
+        return ["operations"]
+    if _has_any(title, ["产品经理", "ai产品", "产品"]):
+        return ["product"]
+    if _has_any(title, ["内容", "数字媒体", "视频", "剪辑", "文案", "设计"]):
+        return ["content"]
+    if _has_any(title, ["前端", "frontend", "web前端", "react", "vue"]):
+        return ["frontend"]
+    if _has_any(title, ["后端", "服务端", "backend", "平台开发", "应用开发"]):
+        return ["backend"]
+    if _has_any(title, ["算法", "机器学习", "深度学习", "模型训练"]):
+        return ["machine_learning"]
+
+    text = " ".join(
+        [
+            category,
+            title,
+            str(match.get("company", "")),
+            " ".join(job_skills),
+        ]
+    )
+    return _detect_directions(text)
+
+
+def _role_compatibility_score(target_roles: List[str], job_roles: List[str]) -> float:
+    if not target_roles or not job_roles:
+        return 1.0
+    target_set = set(target_roles)
+    job_set = set(job_roles)
+    if target_set & job_set:
+        return 1.0
+    if target_set <= TECHNICAL_ROLES and job_set & BUSINESS_ROLES:
+        return 0.2
+    if target_set & BUSINESS_ROLES and job_set <= TECHNICAL_ROLES:
+        return 0.35
+    if target_set <= TECHNICAL_ROLES and job_set <= TECHNICAL_ROLES:
+        return 0.65
+    if target_set & BUSINESS_ROLES and job_set & BUSINESS_ROLES:
+        return 0.5
+    return 0.55
+
+
+def _apply_role_compatibility_cap(score: float, compatibility: float) -> float:
+    if compatibility >= 1.0:
+        return round(score, 2)
+    if compatibility <= 0.25:
+        return round(min(score, 42.0), 2)
+    if compatibility <= 0.4:
+        return round(min(score, 55.0), 2)
+    if compatibility <= 0.65:
+        return round(min(score, 68.0), 2)
+    return round(score, 2)
+
+
+def _role_labels(roles: List[str]) -> str:
+    return "、".join(ROLE_LABELS.get(role, role) for role in roles) or "未识别"
 
 
 def _skill_layer(skill: str) -> str:
@@ -360,6 +507,15 @@ def enrich_match_results(
         missing_skills = [
             skill for skill in job_skills if skill not in matched_skills
         ]
+        job_missing_skills = list(missing_skills)
+        profile_gap = role_profile_gap(resume_text, target_position)
+        profile_missing = []
+        if profile_gap:
+            profile_missing = [
+                *profile_gap.get("missing_must_have", []),
+                *profile_gap.get("missing_preferred", []),
+            ]
+            missing_skills = merge_unique(missing_skills, profile_missing, limit=16)
         skill_score, ability_breakdown = _hierarchical_skill_score(
             resume_text,
             target_position,
@@ -367,24 +523,55 @@ def enrich_match_results(
             job_skills,
             matched_skills,
         )
+        target_roles = _target_role_groups(target_position)
+        job_roles = _job_role_groups(match, job_skills)
+        role_compatibility = _role_compatibility_score(target_roles, job_roles)
+        ability_breakdown["target_roles"] = target_roles
+        ability_breakdown["job_roles"] = job_roles
+        ability_breakdown["target_compatibility_score"] = round(role_compatibility * 100, 2)
+        if profile_gap:
+            ability_breakdown["role_profile"] = {
+                "role": profile_gap.get("role", ""),
+                "profile_id": profile_gap.get("profile_id", ""),
+                "profile_version": profile_gap.get("profile_version", ""),
+                "matched_must_have": profile_gap.get("matched_must_have", []),
+                "missing_must_have": profile_gap.get("missing_must_have", []),
+                "missing_preferred": profile_gap.get("missing_preferred", []),
+                "evidence_signals": profile_gap.get("evidence_signals", []),
+            }
         score = _apply_hierarchy_caps(
             _weighted_match_score(semantic_score, skill_score),
             ability_breakdown,
         )
+        score = _apply_role_compatibility_cap(score, role_compatibility)
 
         if not job_skills:
             gap_analysis = "岗位技能字段不足，暂无法计算技能缺口。"
             suggestion = "建议先补充岗位技能词，再重新运行匹配。"
         elif missing_skills:
-            gap_analysis = "已命中 %s/%s 项技能，缺少：%s。" % (
+            gap_analysis = "已命中 %s/%s 项JD技能，缺少：%s。" % (
                 len(matched_skills),
                 len(job_skills),
-                "、".join(missing_skills),
+                "、".join(job_missing_skills or missing_skills),
             )
+            if profile_gap and profile_missing:
+                gap_analysis += " 岗位画像还提示缺口：%s。" % "、".join(profile_missing[:8])
             suggestion = "建议在简历项目或技能栏补充：%s。" % "、".join(missing_skills)
+            if profile_gap and profile_gap.get("evidence_signals"):
+                suggestion += " 同时补充岗位画像证据信号：%s。" % "、".join(
+                    str(item) for item in profile_gap["evidence_signals"][:4]
+                )
         else:
             gap_analysis = "岗位技能要求已全部命中。"
             suggestion = "可以继续强化项目量化结果和岗位相关经历。"
+
+        if role_compatibility < 1.0:
+            gap_analysis += " 目标岗位大类为%s，当前岗位大类为%s，已按岗位方向不匹配降权。" % (
+                _role_labels(target_roles),
+                _role_labels(job_roles),
+            )
+            if role_compatibility <= 0.25:
+                suggestion = "建议优先查看目标岗位同方向的开发/技术岗位；该岗位更适合作为跨方向参考，不建议作为主匹配结果。"
 
         enriched.append(
             {
@@ -410,8 +597,9 @@ def match_resume_to_jobs(
     top_k: int = 5,
 ) -> List[Dict]:
     query = build_matching_query(resume_text, target_position)
-    matches = search_similar_jobs(query=query, top_k=top_k)
-    return enrich_match_results(resume_text, matches, target_position)
+    candidate_limit = min(80, max(top_k, top_k * 8))
+    matches = search_similar_jobs(query=query, top_k=candidate_limit)
+    return enrich_match_results(resume_text, matches, target_position)[:top_k]
 
 
 def index_approved_job(job: Dict) -> Dict:

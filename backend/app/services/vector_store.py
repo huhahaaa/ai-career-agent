@@ -22,9 +22,12 @@ def _job_document(job: Dict) -> str:
     if isinstance(skills, str):
         skills = [skills]
     sections = [
+        job.get("category", ""),
         job.get("title", ""),
         job.get("company", ""),
         job.get("location", ""),
+        job.get("employment_type", ""),
+        job.get("workplace_type", ""),
         job.get("responsibilities", ""),
         job.get("requirements", ""),
         " ".join(str(skill) for skill in skills),
@@ -40,6 +43,10 @@ def _job_metadata(job: Dict) -> Dict:
         "title": str(job.get("title", "")),
         "company": str(job.get("company", "")),
         "location": str(job.get("location", "")),
+        "category": str(job.get("category", "")),
+        "employment_type": str(job.get("employment_type", "")),
+        "workplace_type": str(job.get("workplace_type", "")),
+        "source_id": str(job.get("source_id", "")),
         "source_link": str(job.get("source_link", "")),
         "skills_json": json.dumps(skills, ensure_ascii=False),
         "status": str(job.get("status", "")),
@@ -178,8 +185,12 @@ class VectorStore:
                     "job_id": str(job_id),
                     "title": metadata.get("title", ""),
                     "company": metadata.get("company", ""),
+                    "category": metadata.get("category", ""),
+                    "employment_type": metadata.get("employment_type", ""),
+                    "workplace_type": metadata.get("workplace_type", ""),
                     "score": score,
                     "reason": "简历与岗位描述的语义相似度为 %.1f%%" % score,
+                    "source_id": metadata.get("source_id", ""),
                     "source_link": metadata.get("source_link", ""),
                     "skills": [str(skill) for skill in skills],
                 }

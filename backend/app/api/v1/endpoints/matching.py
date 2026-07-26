@@ -131,6 +131,7 @@ def _matching_record_details(record: MatchingRecord) -> dict:
                 "company": record.job.company,
                 "score": details.get("score", record.total_score),
                 "reason": details.get("reason", ""),
+                "source_id": details.get("source_id", record.job.source_id or ""),
                 "source_link": details.get("source_link", record.job.source_link),
                 "skills": _load_json_list(record.job.skills),
             }
@@ -188,6 +189,7 @@ def _save_matching_records(
                         "skill_coverage_score": match.get("skill_coverage_score"),
                         "ability_breakdown": match.get("ability_breakdown", {}),
                         "reason": match.get("reason", ""),
+                        "source_id": match.get("source_id", ""),
                         "source_link": match.get("source_link", ""),
                         "matched_skills": match.get("matched_skills", []),
                         "missing_skills": match.get("missing_skills", []),
