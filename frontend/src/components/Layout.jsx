@@ -7,6 +7,7 @@ import {
   CheckSquare,
   ClipboardList,
   FileText,
+  Home,
   LayoutDashboard,
   LogOut,
   Mic,
@@ -41,7 +42,8 @@ export default function Layout() {
     {
       title: '工作台',
       items: [
-        { path: '/', label: '数据看板', icon: LayoutDashboard },
+        { path: '/', label: '主页', icon: Home },
+        { path: '/dashboard', label: '数据看板', icon: LayoutDashboard },
       ],
     },
     {

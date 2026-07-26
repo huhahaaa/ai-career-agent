@@ -183,7 +183,7 @@ def test_resume_upload_rejects_unsupported_file_type(client):
     assert response.json()["code"] == 42202
 
 
-def test_non_text_resume_upload_does_not_create_fake_auditable_content(client):
+def test_non_text_resume_upload_is_rejected_with_clear_error(client):
     headers = register_and_login(client)
 
     upload = client.post(
@@ -191,12 +191,14 @@ def test_non_text_resume_upload_does_not_create_fake_auditable_content(client):
         headers=headers,
         files={"file": ("resume.pdf", build_blank_pdf_bytes(), "application/pdf")},
     )
-    resume_id = upload.json()["data"]["id"]
-    detail_response = client.get("/api/v1/resumes/%s" % resume_id, headers=headers)
 
-    assert upload.status_code == 200
-    assert detail_response.status_code == 200
-    assert detail_response.json()["data"]["versions"][0]["content"] == ""
+    assert upload.status_code == 422
+    assert upload.json()["code"] == 42208
+
+    # 无法提取文本的文件不应留下空简历记录
+    listing = client.get("/api/v1/resumes", headers=headers)
+    assert listing.status_code == 200
+    assert listing.json()["data"] == []
 
 
 def test_resume_text_audit_is_persisted(client, session_factory):

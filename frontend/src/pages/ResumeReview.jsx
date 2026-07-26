@@ -272,7 +272,7 @@ export default function ResumeReview() {
           )}
         </div>
         {resumes.length === 0 ? (
-          <div className="empty">暂无真实简历，请先上传 PDF、DOCX、TXT 或 MD 简历。</div>
+          <div className="empty">暂无真实简历，请先上传 PDF、DOC、DOCX、TXT、MD、RTF、HTML 或 ODT 简历。</div>
         ) : (
           <div className="form-grid">
             <div className="form-group">

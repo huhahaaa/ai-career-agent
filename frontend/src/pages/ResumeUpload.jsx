@@ -25,8 +25,8 @@ export default function ResumeUpload() {
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.match(/\.(pdf|doc|docx|txt|md)$/i)) {
-      setMsg({ type: 'error', text: '仅支持 PDF / DOC / DOCX / TXT / MD 格式' });
+    if (!file.name.match(/\.(pdf|docx?|txt|md|rtf|html?|odt)$/i)) {
+      setMsg({ type: 'error', text: '仅支持 PDF / DOC / DOCX / TXT / MD / RTF / HTML / ODT 格式' });
       return;
     }
     setUploading(true);
@@ -34,13 +34,13 @@ export default function ResumeUpload() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      await uploadResume(fd);
-      const canAuditDirectly = /\.(txt|md)$/i.test(file.name);
+      const result = await uploadResume(fd);
+      const parsedLength = result?.parsed_text_length;
       setMsg({
         type: 'success',
-        text: canAuditDirectly
-          ? '上传成功，可在简历审核页生成真实审核结果。'
-          : '上传成功；当前仅保存文件，PDF/DOC/DOCX 正文解析待接入，暂不能直接审核。',
+        text: parsedLength != null
+          ? `上传成功，已解析出 ${parsedLength} 字正文，可在简历审核页生成真实审核结果。`
+          : '上传成功，可在简历审核页生成真实审核结果。',
       });
       load();
     } catch (error) {
@@ -98,11 +98,11 @@ export default function ResumeUpload() {
       <div className="card">
         <div className="upload-area">
           <label className="upload-label">
-              <input type="file" accept=".pdf,.doc,.docx,.txt,.md" onChange={handleUpload} disabled={uploading} hidden />
+              <input type="file" accept=".pdf,.doc,.docx,.txt,.md,.rtf,.html,.htm,.odt" onChange={handleUpload} disabled={uploading} hidden />
             <div className="upload-box">
               <span className="upload-icon">📁</span>
               <p>{uploading ? '上传中...' : '点击或拖拽上传简历'}</p>
-              <span className="upload-hint">支持 PDF / DOC / DOCX / TXT / MD，TXT/MD 可直接用于真实审核</span>
+              <span className="upload-hint">支持 PDF / DOC / DOCX / TXT / MD / RTF / HTML / ODT，上传后自动解析正文，均可直接审核</span>
             </div>
           </label>
         </div>

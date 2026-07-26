@@ -19,7 +19,7 @@ from app.schemas.resume import (
 from app.services.agent_logging import agent_operation_log
 from app.services.resume_compare import compare_resume_versions
 from app.services.resume_audit import audit_resume_text
-from app.services.resume_parser import extract_resume_text
+from app.services.resume_parser import SUPPORTED_SUFFIXES, extract_resume_text
 from app.services.resume_selection import (
     ensure_default_resume,
     formal_resume_query,
@@ -31,7 +31,7 @@ from app.services.resume_selection import (
 
 router = APIRouter()
 
-ALLOWED_RESUME_SUFFIXES = {".pdf", ".doc", ".docx", ".txt", ".md"}
+ALLOWED_RESUME_SUFFIXES = SUPPORTED_SUFFIXES
 MAX_RESUME_BYTES = 5 * 1024 * 1024
 UPLOAD_ROOT = Path("data/uploads/resumes")
 
@@ -162,13 +162,27 @@ async def upload_resume(
 ) -> ApiResponse[dict]:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_RESUME_SUFFIXES:
-        raise AppException(422, 42202, "only PDF, DOC, DOCX, TXT or MD resumes are supported")
+        raise AppException(
+            422,
+            42202,
+            "only PDF, DOC, DOCX, TXT, MD, RTF, HTML or ODT resumes are supported",
+        )
 
     content = await file.read()
     if not content:
         raise AppException(422, 42203, "resume file cannot be empty")
     if len(content) > MAX_RESUME_BYTES:
         raise AppException(422, 42204, "resume file is too large")
+
+    # 先解析正文再落库，避免扫描件等无法提取文本的文件留下空简历
+    parsed_text = _decode_uploaded_text(content, file.filename or "resume")
+    if not parsed_text:
+        raise AppException(
+            422,
+            42208,
+            "could not extract readable text from this file; "
+            "scanned images or corrupted documents are not supported",
+        )
 
     resume = Resume(
         user_id=current_user.id,
@@ -185,7 +199,6 @@ async def upload_resume(
     safe_name = "resume_%s_v1%s" % (resume.id, suffix)
     target_path = target_dir / safe_name
     target_path.write_bytes(content)
-    parsed_text = _decode_uploaded_text(content, file.filename or safe_name)
 
     db.add(
         ResumeVersion(
