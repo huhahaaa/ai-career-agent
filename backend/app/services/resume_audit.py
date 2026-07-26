@@ -7,6 +7,11 @@ import re
 from typing import Any, Dict, List
 
 from app.services.interview_agent import _parse_json_fallback, _safe_call_llm
+from app.services.knowledge_base import (
+    get_failure_case_by_scenario,
+    merge_unique,
+    role_profile_gap,
+)
 
 VAGUE_PHRASES = [
     "熟悉",
@@ -120,9 +125,39 @@ def audit_resume_text(resume_text: str, target_position: str = "") -> Dict[str, 
     if not suggestions:
         suggestions.append("补充项目背景、个人职责、技术动作和量化结果。")
 
+    profile_gap = role_profile_gap(resume_text, target_position)
+    if profile_gap:
+        missing_must = profile_gap.get("missing_must_have", [])
+        missing_preferred = profile_gap.get("missing_preferred", [])
+        if missing_must:
+            suggestions.insert(
+                0,
+                "根据%s岗位画像，优先补充必备能力：%s。"
+                % (profile_gap.get("role", "目标"), "、".join(missing_must[:4])),
+            )
+        evidence = profile_gap.get("evidence_signals", [])
+        if evidence:
+            suggestions.append(
+                "项目经历建议补充这些证据信号：%s。"
+                % "、".join(str(item) for item in evidence[:5])
+            )
+    else:
+        missing_must = []
+        missing_preferred = []
+
+    short_case = get_failure_case_by_scenario("resume_too_short")
+    if len(resume_text.strip()) < 80 and short_case:
+        risk_flags.append(str(short_case.get("description", "简历信息不足")))
+        suggestions.append(str(short_case.get("expected_system_behavior", "请补充完整简历信息。")))
+
     missing_keywords = _merge_missing_keywords(
         llm_result.get("missing_keywords", []),
         _extract_missing_keywords(resume_text, target_position),
+    )
+    missing_keywords = merge_unique(
+        [*missing_must, *missing_keywords],
+        missing_preferred,
+        limit=10,
     )
 
     return {
@@ -221,8 +256,8 @@ def _merge_missing_keywords(*groups: Any) -> List[str]:
 
 
 def _determine_risk_level(score: int, issues: List[str]) -> str:
-    if score < 50 or len(issues) >= 5:
+    if score < 60 or (score < 70 and len(issues) >= 6):
         return "高"
-    if score < 70 or len(issues) >= 2:
+    if score < 75 or len(issues) >= 3:
         return "中"
     return "低"

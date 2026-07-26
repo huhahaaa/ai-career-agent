@@ -19,6 +19,7 @@ from app.services.interview_summary import (
     dashboard_interview_summary,
     is_effective_interview_session,
 )
+from app.services.knowledge_base import knowledge_overview
 from app.services.resume_selection import (
     current_resume_version,
     get_default_resume,
@@ -186,6 +187,13 @@ def metrics(
             or 0,
         }
     )
+
+
+@router.get("/knowledge", response_model=ApiResponse[dict])
+def knowledge(
+    _current_user: User = Depends(get_current_user),
+) -> ApiResponse[dict]:
+    return success_response(knowledge_overview())
 
 
 @router.get("/dashboard", response_model=ApiResponse[dict])

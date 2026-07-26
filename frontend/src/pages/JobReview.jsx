@@ -21,8 +21,11 @@ export default function JobReview() {
       await updateJobStatus(id, status);
       setMsg({ type: 'success', text: status === 'approved' ? '已通过审核' : '已驳回' });
       load();
-    } catch {
-      setMsg({ type: 'error', text: '操作失败' });
+    } catch (error) {
+      const text = error.status === 403
+        ? '权限不足：请使用审核员账号进行岗位审核'
+        : (error.message || '操作失败');
+      setMsg({ type: 'error', text });
     }
   };
 

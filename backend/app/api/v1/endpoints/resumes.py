@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -11,9 +11,15 @@ from app.db.session import get_db
 from app.models.resume import RESUME_SOURCE_FORMAL, Resume, ResumeAuditReport, ResumeVersion
 from app.models.user import User
 from app.schemas.common import ApiResponse, success_response
-from app.schemas.resume import ResumeAuditRequest, ResumeAuditResult
+from app.schemas.resume import (
+    ResumeAuditRequest,
+    ResumeAuditResult,
+    ResumeVersionCreateRequest,
+)
 from app.services.agent_logging import agent_operation_log
+from app.services.resume_compare import compare_resume_versions
 from app.services.resume_audit import audit_resume_text
+from app.services.resume_parser import extract_resume_text
 from app.services.resume_selection import (
     ensure_default_resume,
     formal_resume_query,
@@ -47,9 +53,9 @@ def _load_json_list(value: str) -> list:
 
 
 def _risk_level(score: int, risk_flags: list) -> str:
-    if score < 50 or len(risk_flags) >= 5:
+    if score < 60 or (score < 70 and len(risk_flags) >= 6):
         return "高"
-    if score < 70 or len(risk_flags) >= 2:
+    if score < 75 or len(risk_flags) >= 3:
         return "中"
     return "低"
 
@@ -64,6 +70,8 @@ def _audit_report_to_response(report: ResumeAuditReport) -> dict:
         "suggestions": suggestions,
         "missing_keywords": _load_json_list(report.missing_keywords),
         "risk_level": _risk_level(report.score, risk_flags),
+        "target_position": report.target_position or "",
+        "resume_version": report.resume_version_number,
         "created_at": report.created_at,
     }
 
@@ -88,10 +96,50 @@ def _resume_summary(resume: Resume) -> dict:
 
 
 def _decode_uploaded_text(content: bytes, filename: str) -> str:
-    suffix = Path(filename).suffix.lower()
-    if suffix in {".txt", ".md"}:
-        return content.decode("utf-8", errors="ignore")
-    return ""
+    try:
+        text, _parser = extract_resume_text(content, filename)
+        return text
+    except Exception as exc:
+        raise AppException(422, 42207, "resume text extraction failed: %s" % exc) from exc
+
+
+def _version_payload(version: ResumeVersion) -> dict:
+    return {
+        "id": version.id,
+        "version": version.version_number,
+        "filename": version.file_name,
+        "content": version.content,
+        "content_length": len(version.content or ""),
+        "created_at": version.created_at,
+    }
+
+
+def _resume_detail_payload(resume: Resume) -> dict:
+    latest_report = _latest_report(resume)
+    return {
+        **_resume_summary(resume),
+        "versions": [_version_payload(version) for version in resume.versions],
+        "latest_report": (
+            _audit_report_to_response(latest_report)
+            if latest_report is not None
+            else None
+        ),
+        "audit_reports": [
+            _audit_report_to_response(report)
+            for report in sorted(
+                resume.audit_reports,
+                key=lambda item: item.id or 0,
+                reverse=True,
+            )
+        ],
+    }
+
+
+def _get_version_by_number(resume: Resume, version_number: int) -> ResumeVersion:
+    for version in resume.versions:
+        if version.version_number == version_number:
+            return version
+    raise AppException(404, 40404, "resume version not found")
 
 
 @router.get("", response_model=ApiResponse[List[dict]])
@@ -137,6 +185,7 @@ async def upload_resume(
     safe_name = "resume_%s_v1%s" % (resume.id, suffix)
     target_path = target_dir / safe_name
     target_path.write_bytes(content)
+    parsed_text = _decode_uploaded_text(content, file.filename or safe_name)
 
     db.add(
         ResumeVersion(
@@ -144,12 +193,18 @@ async def upload_resume(
             version_number=1,
             file_name=file.filename or safe_name,
             file_path=str(target_path),
-            content=_decode_uploaded_text(content, file.filename or safe_name),
+            content=parsed_text,
         )
     )
     db.commit()
     db.refresh(resume)
-    return success_response(_resume_summary(resume), message="resume uploaded")
+    return success_response(
+        {
+            **_resume_summary(resume),
+            "parsed_text_length": len(parsed_text),
+        },
+        message="resume uploaded",
+    )
 
 
 @router.get("/{resume_id}", response_model=ApiResponse[dict])
@@ -159,33 +214,58 @@ def resume_detail(
     db: Session = Depends(get_db),
 ) -> ApiResponse[dict]:
     resume = get_user_formal_resume(db, current_user, resume_id)
-    latest_report = _latest_report(resume)
+    return success_response(_resume_detail_payload(resume))
+
+
+@router.post("/{resume_id}/versions", response_model=ApiResponse[dict])
+def create_resume_version(
+    resume_id: int,
+    payload: ResumeVersionCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict]:
+    resume = get_user_formal_resume(db, current_user, resume_id)
+    next_version = max((version.version_number for version in resume.versions), default=0) + 1
+    file_name = payload.file_name.strip() or "edited-resume.txt"
+    db.add(
+        ResumeVersion(
+            resume_id=resume.id,
+            version_number=next_version,
+            file_name=file_name,
+            file_path="",
+            content=payload.content.strip(),
+        )
+    )
+    resume.current_version_number = next_version
+    db.commit()
+    db.refresh(resume)
+    return success_response(_resume_detail_payload(resume), message="resume version created")
+
+
+@router.get("/{resume_id}/compare", response_model=ApiResponse[dict])
+def compare_resume_version(
+    resume_id: int,
+    from_version: int = Query(..., ge=1),
+    to_version: int = Query(..., ge=1),
+    target_position: str = "",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict]:
+    resume = get_user_formal_resume(db, current_user, resume_id)
+    before = _get_version_by_number(resume, from_version)
+    after = _get_version_by_number(resume, to_version)
+    result = compare_resume_versions(
+        before.content or "",
+        after.content or "",
+        target_position,
+    )
     return success_response(
         {
-            **_resume_summary(resume),
-            "versions": [
-                {
-                    "id": version.id,
-                    "version": version.version_number,
-                    "filename": version.file_name,
-                    "content": version.content,
-                    "created_at": version.created_at,
-                }
-                for version in resume.versions
-            ],
-            "latest_report": (
-                _audit_report_to_response(latest_report)
-                if latest_report is not None
-                else None
-            ),
-            "audit_reports": [
-                _audit_report_to_response(report)
-                for report in sorted(
-                    resume.audit_reports,
-                    key=lambda item: item.id or 0,
-                    reverse=True,
-                )
-            ],
+            "resume_id": resume.id,
+            "from_version": from_version,
+            "to_version": to_version,
+            "target_position": target_position,
+            **result,
         }
     )
 
@@ -237,6 +317,7 @@ def audit_resume(
         operation="resume.audit",
         request_summary={
             "resume_id": resume_id,
+            "resume_version": payload.resume_version,
             "target_position": payload.target_position,
             "resume_chars": len(payload.resume_text),
         },
@@ -246,6 +327,8 @@ def audit_resume(
             "score": result.get("score"),
             "risk_level": result.get("risk_level"),
             "risk_count": len(result.get("risk_flags", [])),
+            "target_position": payload.target_position,
+            "resume_version": payload.resume_version,
         }
     db.add(
         ResumeAuditReport(
@@ -258,6 +341,8 @@ def audit_resume(
                 result.get("missing_keywords", []),
                 ensure_ascii=False,
             ),
+            target_position=payload.target_position.strip(),
+            resume_version_number=payload.resume_version,
         )
     )
     db.commit()

@@ -28,6 +28,10 @@ from app.services.interview_question_bank import (
     load_question_bank,
     normalize_position,
 )
+from app.services.knowledge_base import (
+    get_failure_case_by_scenario,
+    role_profile_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -343,9 +347,12 @@ def start_interview(
     tools_used = ["resume_analyzer"]
 
     job_requirements = ""
+    knowledge_context = role_profile_context(target_position)
     if target_position:
         job_requirements = _analyze_job_requirements(target_position, interview_mode, target_job_id)
         tools_used.append("job_matcher")
+    if knowledge_context:
+        tools_used.append("text_knowledge_base")
 
     questions = _generate_questions(
         resume_text=resume_text,
@@ -366,6 +373,7 @@ def start_interview(
         "interview_mode": interview_mode,
         "parsed_resume": parsed_resume,
         "job_requirements": job_requirements,
+        "knowledge_context": knowledge_context,
         "questions": questions,
         "current_index": 0,
         "answers": [{} for _ in questions],
@@ -627,17 +635,22 @@ def _analyze_job_requirements(
     mode_hint = _mode_analysis_hint(interview_mode)
     position_bucket = normalize_position(target_position)
     real_summary = get_position_job_summary(position_bucket, job_id)
+    profile_context = role_profile_context(target_position)
     prompt = f"""目标岗位：{target_position}
 面试模式：{interview_mode}
 
 真实岗位资料（来自岗位库）：
 {real_summary}
 
+文本知识库岗位画像：
+{profile_context or "（无）"}
+
 请用 3-5 句话总结这个岗位在{interview_mode}中的核心关注点、常见面试重点和典型工作场景，需结合上面的真实职责与要求。
 {mode_hint}"""
     fallback = (
         f"{target_position} 岗位通常关注技术基础、项目落地能力、沟通协作和问题排查能力。\n"
         f"【真实岗位参考】{real_summary}"
+        + (f"\n{profile_context}" if profile_context else "")
     )
     return _safe_call_llm(
         system_prompt="你是资深技术面试官，熟悉各岗位的 JD 和面试要点。",
@@ -659,9 +672,14 @@ def _generate_questions(
     projects_text = json.dumps(parsed_resume.get("projects", []), ensure_ascii=False)
     position = target_position or "目标岗位"
     default_questions = _default_questions(position, interview_mode)
+    question_bank_reference = "\n".join(
+        f"{index + 1}. {question}"
+        for index, question in enumerate(default_questions[:8])
+    )
 
     position_bucket = normalize_position(target_position)
     real_resp = get_position_responsibilities(position_bucket, job_id)
+    profile_context = role_profile_context(target_position)
     # 以真实岗位职责题为主（最多 6 道），首题保留为模式专属开场，不足 8 道用默认题补足
     grounded = [
         f"结合真实岗位职责「{r[:50]}」，请分享你过往项目中对应的经验、做法与可量化成果。"
@@ -692,12 +710,16 @@ def _generate_questions(
 
 目标岗位：{position}
 岗位要求：{job_requirements}
+岗位画像知识：{profile_context or "（无）"}
 真实岗位职责参考：{("；".join(real_resp[:4]) if real_resp else "（无）")}
+题库参考：
+{question_bank_reference or "（无）"}
 
 题目分配：
 {allocation}
 
 {mode_instruction}
+请优先从题库参考中选取或改写题目，并结合候选人简历和真实岗位职责进行个性化调整。
 
 只输出 JSON 数组，例如 ["题目1", "题目2"]。
 """
@@ -791,9 +813,6 @@ def _mode_scoring_hint(interview_mode: str) -> str:
 
 def _default_questions(position: str = "", interview_mode: str = DEFAULT_INTERVIEW_MODE) -> List[str]:
     target = position or "目标岗位"
-    position_questions = get_position_question_pool(position, interview_mode)
-    if position_questions:
-        return position_questions[:8]
     mode_questions = {
         "HR面": [
             "请做一个简短的自我介绍，重点说明你的职业规划和个人优势。",
@@ -836,7 +855,18 @@ def _default_questions(position: str = "", interview_mode: str = DEFAULT_INTERVI
             "你对这次练习有什么特别想提升的方面？",
         ],
     }
-    return mode_questions.get(interview_mode, mode_questions["技术面"])
+    generic_questions = mode_questions.get(interview_mode, mode_questions["技术面"])
+    position_questions = get_position_question_pool(position, interview_mode)
+    if not position_questions:
+        return generic_questions
+
+    combined_questions: List[str] = []
+    for question in position_questions + generic_questions:
+        if question and question not in combined_questions:
+            combined_questions.append(question)
+        if len(combined_questions) >= 8:
+            break
+    return combined_questions
 
 
 def _generate_followup(
@@ -852,8 +882,14 @@ def _generate_followup(
         focus_line = f"候选人漏答的题目要点：{missing_text}\n请优先围绕这些漏答点追问。"
         fallback = f"你刚才的回答还没有回应题目中的这些要点：{missing_text}。请补充说明。"
     else:
-        focus_line = "候选人的回答不够具体。"
-        fallback = "能具体说一下你用了什么技术、承担了哪部分工作，以及取得了什么量化成果吗？"
+        failure_case = get_failure_case_by_scenario("answer_too_short_follow_up")
+        rule_hint = str(failure_case.get("audit_rule", "")) if failure_case else ""
+        behavior_hint = str(failure_case.get("expected_system_behavior", "")) if failure_case else ""
+        focus_line = "候选人的回答不够具体。%s" % (rule_hint or "")
+        fallback = (
+            behavior_hint
+            or "能具体说一下你用了什么技术、承担了哪部分工作，以及取得了什么量化成果吗？"
+        )
     prompt = f"""原问题：{question}
 候选人回答：{answer}
 目标岗位：{target_position}

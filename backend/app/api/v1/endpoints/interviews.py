@@ -1,3 +1,5 @@
+import re
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -255,6 +257,88 @@ def history(
             for session in sessions
             if is_effective_interview_session(session)
         ]
+    )
+
+
+def _split_practice_actions(text: str) -> list[str]:
+    parts = [
+        item.strip(" -•\t\r\n")
+        for item in re.split(r"[\n;；]", text or "")
+    ]
+    return [item for item in parts if item][:6]
+
+
+def _weak_dimensions(dimension_averages: dict) -> list[dict]:
+    rows = []
+    for name, value in dimension_averages.items():
+        if name == "total" or not isinstance(value, (int, float)):
+            continue
+        rows.append({"name": name, "score": round(float(value), 1)})
+    return sorted(rows, key=lambda item: item["score"])[:3]
+
+
+@router.get("/training-plan", response_model=ApiResponse[dict])
+def training_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApiResponse[dict]:
+    sessions = db.scalars(
+        select(InterviewSession)
+        .where(
+            InterviewSession.user_id == current_user.id,
+            InterviewSession.status == "completed",
+        )
+        .order_by(InterviewSession.created_at.desc(), InterviewSession.id.desc())
+    ).all()
+    plans = []
+    dimension_counter: Counter[str] = Counter()
+    scored_sessions = []
+    for session in sessions:
+        if not is_effective_interview_session(session):
+            continue
+        state = load_agent_state(session)
+        report = state.get("completed_report") if isinstance(state, dict) else None
+        if not isinstance(report, dict):
+            report = {}
+        dimensions = _weak_dimensions(report.get("dimension_averages", {}) or {})
+        for item in dimensions:
+            dimension_counter[item["name"]] += 1
+        actions = _split_practice_actions(report.get("practice_plan", ""))
+        if not actions:
+            actions = ["补充 STAR 结构、技术细节、个人贡献和量化结果。"]
+        summary = session_summary(session)
+        scored_sessions.append(summary)
+        plans.append(
+            {
+                "session_id": session.id,
+                "job_title": summary["job_title"],
+                "company": summary["company"],
+                "mode": summary["mode"],
+                "score": summary["score"],
+                "created_at": session.created_at,
+                "weak_dimensions": dimensions,
+                "practice_actions": actions,
+                "star_suggestions": report.get("star_suggestions", []),
+                "summary": report.get("summary") or session.feedback,
+            }
+        )
+
+    avg_score = (
+        round(sum(item["score"] for item in scored_sessions if item["score"] is not None) / len(scored_sessions), 1)
+        if scored_sessions
+        else None
+    )
+    return success_response(
+        {
+            "total_completed": len(plans),
+            "average_score": avg_score,
+            "latest_score": plans[0]["score"] if plans else None,
+            "priority_dimensions": [
+                {"name": name, "count": count}
+                for name, count in dimension_counter.most_common(5)
+            ],
+            "plans": plans,
+        }
     )
 
 

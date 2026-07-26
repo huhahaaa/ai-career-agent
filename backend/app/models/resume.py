@@ -110,6 +110,8 @@ class ResumeAuditReport(Base):
     risk_flags = Column(Text, default="[]", nullable=False)
     suggestions = Column(Text, default="[]", nullable=False)
     missing_keywords = Column(Text, default="[]", nullable=False)
+    target_position = Column(String(128), default="", nullable=False)
+    resume_version_number = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="resume_audit_reports")

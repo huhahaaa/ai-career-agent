@@ -114,6 +114,18 @@ def test_dashboard_returns_real_user_and_job_statistics(client, session_factory)
     assert data["active_resume"]["id"] == resume.id
 
 
+def test_admin_knowledge_overview_returns_text_knowledge_usage(client):
+    headers = register_and_login(client)
+
+    response = client.get("/api/v1/admin/knowledge", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["role_profiles"]["count"] >= 6
+    assert "matching" in data["role_profiles"]["used_by"]
+    assert data["failure_cases"]["count"] >= 6
+
+
 def test_dashboard_uses_default_formal_resume_and_ignores_snapshots(
     client,
     session_factory,

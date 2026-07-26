@@ -63,9 +63,13 @@ def _coerce_status(raw_job: Dict, fallback: str = "pending") -> str:
 def _job_values(raw_job: Dict) -> Dict:
     normalized = normalize_job(raw_job)
     return {
+        "source_id": normalized["source_id"],
+        "category": normalized["category"],
         "title": normalized["title"],
         "company": normalized["company"],
         "location": normalized["location"],
+        "employment_type": normalized["employment_type"],
+        "workplace_type": normalized["workplace_type"],
         "salary_range": normalized["salary_range"],
         "education": normalized["education"],
         "experience": normalized["experience"],
@@ -94,9 +98,21 @@ def sync_clean_jobs(
             stats["skipped_count"] += 1
             continue
 
-        existing = db.scalar(
-            select(JobPosting).where(JobPosting.source_link == values["source_link"])
-        )
+        if values["source_id"]:
+            existing = db.scalar(
+                select(JobPosting).where(JobPosting.source_id == values["source_id"])
+            )
+            if existing is None:
+                existing = db.scalar(
+                    select(JobPosting).where(
+                        JobPosting.source_link == values["source_link"],
+                        JobPosting.source_id.is_(None),
+                    )
+                )
+        else:
+            existing = db.scalar(
+                select(JobPosting).where(JobPosting.source_link == values["source_link"])
+            )
         audit_comment = str(raw_job.get("audit_comment") or "").strip()
         if existing:
             for key, value in values.items():
@@ -127,9 +143,13 @@ def _job_to_vector_payload(job: JobPosting) -> Dict:
         "title": job.title,
         "company": job.company,
         "location": job.location,
+        "category": job.category,
+        "employment_type": job.employment_type,
+        "workplace_type": job.workplace_type,
         "responsibilities": job.responsibilities,
         "requirements": job.requirements,
         "skills": _decode_skills(job.skills),
+        "source_id": job.source_id,
         "source_link": job.source_link,
         "status": job.status,
     }

@@ -19,6 +19,7 @@ class MatchResult(BaseModel):
     skill_coverage_score: float | None = Field(default=None, ge=0, le=100)
     ability_breakdown: Dict[str, object] = Field(default_factory=dict)
     reason: str
+    source_id: str = ""
     source_link: str = ""
     matched_skills: List[str] = Field(default_factory=list)
     missing_skills: List[str] = Field(default_factory=list)

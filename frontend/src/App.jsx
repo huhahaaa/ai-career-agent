@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
@@ -13,7 +13,16 @@ import JobSearchMatch from './pages/JobSearchMatch';
 import JobComparison from './pages/JobComparison';
 import MockInterview from './pages/MockInterview';
 import InterviewHistory from './pages/InterviewHistory';
+import TrainingPlan from './pages/TrainingPlan';
 import ErrorPage, { NotFoundPage, ServerErrorPage, AgentErrorPage } from './pages/ErrorPage';
+
+function RoleRoute({ roles, children }) {
+  const { user } = useAuth();
+  if (!roles.includes(user?.role)) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
+}
 
 export default function App() {
   return (
@@ -39,13 +48,14 @@ export default function App() {
 
             {/* 岗位管理 */}
             <Route path="/jobs" element={<JobCollection />} />
-            <Route path="/jobs/review" element={<JobReview />} />
+            <Route path="/jobs/review" element={<RoleRoute roles={['reviewer']}><JobReview /></RoleRoute>} />
             <Route path="/jobs/match" element={<JobSearchMatch />} />
             <Route path="/jobs/compare" element={<JobComparison />} />
 
             {/* 模拟面试 */}
             <Route path="/interview" element={<MockInterview />} />
             <Route path="/interview/history" element={<InterviewHistory />} />
+            <Route path="/interview/training" element={<TrainingPlan />} />
           </Route>
 
           {/* 兜底 404 */}

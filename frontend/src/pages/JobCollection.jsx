@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Target, Upload } from 'lucide-react';
-import { getJobs, createJob, batchImportJobs } from '../api/client';
+import { BriefcaseBusiness, Plus, Star, Target, Upload } from 'lucide-react';
+import { getJobs, createJob, batchImportJobs, updateJobApplication } from '../api/client';
 
 const initialForm = {
   title: '',
@@ -18,6 +18,22 @@ const statusMeta = {
   approved: { label: '已通过', color: 'success' },
   rejected: { label: '已驳回', color: 'error' },
 };
+const applicationStatusOptions = [
+  { value: '', label: '未跟进' },
+  { value: 'interested', label: '感兴趣' },
+  { value: 'applied', label: '已投递' },
+  { value: 'interviewing', label: '面试中' },
+  { value: 'offer', label: '已拿 Offer' },
+  { value: 'rejected', label: '未通过' },
+  { value: 'archived', label: '已归档' },
+];
+
+function applicationErrorMessage(error) {
+  if (error?.status === 404 || error?.message === 'Not Found') {
+    return '岗位跟进接口未加载，请重启后端服务后再试。';
+  }
+  return error?.message || '岗位跟进状态更新失败';
+}
 
 export default function JobCollection() {
   const [jobs, setJobs] = useState([]);
@@ -28,6 +44,7 @@ export default function JobCollection() {
   const [batchText, setBatchText] = useState('');
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [saving, setSaving] = useState(false);
+  const [updatingJobId, setUpdatingJobId] = useState(null);
   const navigate = useNavigate();
 
   const load = () => {
@@ -90,11 +107,43 @@ export default function JobCollection() {
     } finally { setSaving(false); }
   };
 
+  const updateLocalJob = (jobId, nextJob) => {
+    setJobs(current => current.map(job => String(job.id) === String(jobId) ? nextJob : job));
+  };
+
+  const handleFavoriteToggle = async (job) => {
+    setUpdatingJobId(job.id);
+    setMsg({ type: '', text: '' });
+    try {
+      const nextJob = await updateJobApplication(job.id, { is_favorite: !job.is_favorite });
+      updateLocalJob(job.id, nextJob);
+      setMsg({ type: 'success', text: nextJob.is_favorite ? '已收藏岗位' : '已取消收藏' });
+    } catch (error) {
+      setMsg({ type: 'error', text: applicationErrorMessage(error) });
+    } finally {
+      setUpdatingJobId(null);
+    }
+  };
+
+  const handleApplicationStatusChange = async (job, status) => {
+    setUpdatingJobId(job.id);
+    setMsg({ type: '', text: '' });
+    try {
+      const nextJob = await updateJobApplication(job.id, { application_status: status });
+      updateLocalJob(job.id, nextJob);
+      setMsg({ type: 'success', text: status ? '投递状态已更新' : '已清空投递状态' });
+    } catch (error) {
+      setMsg({ type: 'error', text: applicationErrorMessage(error) });
+    } finally {
+      setUpdatingJobId(null);
+    }
+  };
+
   if (loading) return <div className="loading">加载中...</div>;
 
   return (
     <div className="page">
-      <h2>💼 岗位管理</h2>
+      <h2>岗位管理</h2>
       {msg.text && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div className="toolbar">
@@ -175,7 +224,13 @@ export default function JobCollection() {
 
       {/* 岗位列表 */}
       <div className="card">
-        <h3>📋 岗位列表 ({jobs.length})</h3>
+        <div className="card-header-row">
+          <h3>岗位列表 ({jobs.length})</h3>
+          <div className="job-list-summary">
+            <span><Star size={14} /> 已收藏 {jobs.filter(item => item.is_favorite).length}</span>
+            <span><BriefcaseBusiness size={14} /> 已跟进 {jobs.filter(item => item.application_status).length}</span>
+          </div>
+        </div>
         {jobs.length === 0 ? (
           <div className="empty">暂无岗位数据</div>
         ) : (
@@ -188,6 +243,8 @@ export default function JobCollection() {
                 <th>发布时间</th>
                 <th>技能</th>
                 <th>状态</th>
+                <th>收藏</th>
+                <th>投递状态</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -200,6 +257,30 @@ export default function JobCollection() {
                   <td>{j.publish_time || '-'}</td>
                   <td>{j.skills?.join('、') || '-'}</td>
                   <td><span className={`tag tag-${statusMeta[j.status]?.color || ''}`}>{statusMeta[j.status]?.label || j.status}</span></td>
+                  <td>
+                    <button
+                      className={`favorite-btn ${j.is_favorite ? 'active' : ''}`}
+                      type="button"
+                      disabled={updatingJobId === j.id}
+                      onClick={() => handleFavoriteToggle(j)}
+                      title={j.is_favorite ? '取消收藏' : '收藏岗位'}
+                      aria-label={j.is_favorite ? '取消收藏' : '收藏岗位'}
+                    >
+                      <Star size={16} fill={j.is_favorite ? 'currentColor' : 'none'} />
+                    </button>
+                  </td>
+                  <td>
+                    <select
+                      className="inline-select"
+                      value={j.application_status || ''}
+                      disabled={updatingJobId === j.id}
+                      onChange={event => handleApplicationStatusChange(j, event.target.value)}
+                    >
+                      {applicationStatusOptions.map(option => (
+                        <option key={option.value || 'empty'} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="actions">
                     <button className="btn btn-sm btn-outline" onClick={() => navigate('/jobs/match', { state: { jobId: j.id } })}>匹配</button>
                   </td>

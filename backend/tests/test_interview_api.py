@@ -39,6 +39,7 @@ def test_interview_accepts_vector_job_identifier(client):
     assert response.json()["data"]["session_id"]
     assert "Machine Learning Intern" in response.json()["data"]["question"]
     assert response.json()["data"]["total_questions"] == 8
+    assert "text_knowledge_base" in response.json()["data"]["tools_used"]
 
 
 def test_interview_session_messages_and_report_are_persisted(
@@ -91,6 +92,16 @@ def test_interview_session_messages_and_report_are_persisted(
     assert report_response.status_code == 200
     assert report_response.json()["data"]["agent_report"]["overall_score"] >= 70
     assert len(report_response.json()["data"]["messages"]) == 3
+
+    training_plan_response = client.get(
+        "/api/v1/interviews/training-plan",
+        headers=headers,
+    )
+    assert training_plan_response.status_code == 200
+    training_plan = training_plan_response.json()["data"]
+    assert training_plan["total_completed"] == 1
+    assert training_plan["plans"][0]["session_id"] == int(session_id)
+    assert training_plan["plans"][0]["practice_actions"]
 
     with session_factory() as db:
         resumes = db.scalars(select(Resume)).all()

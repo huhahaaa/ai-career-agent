@@ -44,3 +44,8 @@ class User(Base):
     )
     reviewed_jobs = relationship("JobReviewRecord", back_populates="reviewer")
     agent_logs = relationship("AgentLog", back_populates="user")
+    job_applications = relationship(
+        "JobApplication",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
