@@ -1,10 +1,18 @@
 """Interview Agent service.
 
-Supports 4 interview modes:
+Supports 4 interview modes (each with distinct persona, question style,
+follow-up strategy and scoring rubric):
   - HR面 (behavioural): focus on soft skills, motivation, team fit
   - 技术面 (technical): focus on technical depth and project experience (default)
   - 压力面 (pressure): challenging followups, stress testing
   - 反馈教练 (coach): gentle tone, detailed improvement suggestions
+
+Design principles:
+  - Temperature is scenario-based: high for interactive Q&A (questions,
+    follow-ups), low for evaluation/report generation, very low for judgments.
+  - Agent (LLM) semantic judgement takes priority; hard-coded rules only
+    dominate as fallback when the LLM is unavailable, otherwise rules act
+    as soft guardrails.
 """
 
 from __future__ import annotations
@@ -40,6 +48,65 @@ _client: Any = None
 # ── interview mode constants ──────────────────────────────────────────
 INTERVIEW_MODES = frozenset({"HR面", "技术面", "压力面", "反馈教练"})
 DEFAULT_INTERVIEW_MODE = "技术面"
+
+# ── 模式专属面试官人设（System Prompt），强化四种模式的区分度 ──────────
+MODE_PERSONAS = {
+    "HR面": {
+        "question": (
+            "你是资深 HR 面试官，擅长行为面试与动机挖掘。"
+            "你只关心候选人的沟通表达、职业规划、价值观与团队契合度，"
+            "绝不提问八股式技术细节。出题风格亲切但有穿透力。"
+        ),
+        "followup": "你是资深 HR 面试官，正在进行行为面试，擅长从回答中捕捉真实动机与具体经历。",
+        "scoring": "你是资深 HR 面试官，从软技能、价值观与文化匹配角度严格但公正地评分。",
+    },
+    "技术面": {
+        "question": (
+            "你是资深技术面试官，长期负责一线技术招聘。"
+            "你只关心候选人的技术深度、项目落地能力与问题排查思路，"
+            "出题直奔具体技术场景，拒绝空泛的概念背诵题。"
+        ),
+        "followup": "你是资深技术面试官，擅长追问技术细节、个人贡献边界与量化结果。",
+        "scoring": "你是资深技术面试官，从技术深度与工程落地角度严格但公正地评分。",
+    },
+    "压力面": {
+        "question": (
+            "你是以犀利著称的压力面面试官。"
+            "你的任务就是制造适度压迫感：质疑、挑战、设置两难，"
+            "逼迫候选人暴露真实水平与临场反应，每道题都必须带有挑战性。"
+        ),
+        "followup": "你是压力面面试官，追问尖锐直接，专挑回答中最薄弱、最矛盾的点施压。",
+        "scoring": "你是压力面面试官，重点评估候选人在压力下的逻辑、情绪稳定性与临场应变，评分严格但公正。",
+    },
+    "反馈教练": {
+        "question": (
+            "你是耐心的面试教练，目标是帮候选人摸底并提升。"
+            "出题温和、有引导性，让候选人愿意充分表达，便于后续给出针对性建议。"
+        ),
+        "followup": "你是面试教练，追问是为了帮候选人补全表达要素，语气温和鼓励。",
+        "scoring": (
+            "你是面试教练，反馈从细：问题描述温和但诚实，改进建议必须具体可执行。"
+            "你的鼓励只对真实的努力有效——没有内容时如实指出，才是对候选人最大的负责。"
+        ),
+    },
+}
+
+
+def _mode_persona(interview_mode: str, task: str) -> str:
+    """返回模式专属人设 System Prompt，task 为 question/followup/scoring。"""
+    persona = MODE_PERSONAS.get(interview_mode, MODE_PERSONAS["技术面"])
+    return persona.get(task, persona["question"])
+
+
+# ── 分场景温度配置 ──────────────────────────────────────────────────
+# 面试交互（出题、追问）用高温度，问答更自然、不死板
+TEMP_INTERACTIVE = 0.85
+# 解析/分析类（简历解析、岗位分析）用中低温度，保证结构稳定
+TEMP_ANALYSIS = 0.3
+# 评分与报告生成（打分、STAR 改写、练习计划）用低温度，严格依据规则
+TEMP_EVALUATION = 0.2
+# 判断类（追问判断）用极低温度，只要稳定输出
+TEMP_JUDGE = 0.1
 
 # ── technology keyword bank ───────────────────────────────────────────
 TECH_KEYWORDS = [
@@ -204,6 +271,43 @@ def _contains_quantifier(text: str) -> bool:
     return bool(re.search(r"\d+|百分之|提升|降低|减少|增加", text))
 
 
+def _is_meaningless_answer(answer: str) -> bool:
+    """检测无意义输入（乱敲键盘、无内容重复字符等）。
+
+    此类输入不应进入 LLM 评分：模型会被"鼓励人设"倒逼，给乱码编造并不存在的
+    优点（如实测中"啊打发嘎达"被评价为"显示了积极的态度"）。
+    判定逻辑：仅拦截"长度足够但内容无意义"的输入（用字多样性过低 + 高频重复
+    片段），避免误伤两类正常情况：
+    - 短回答（如"我负责了一个项目"）：应走追问流程引导补充，而非直接拒绝；
+    - 排比表述（如"我负责A，我负责B，我负责C"）：用字多样性正常。
+    """
+    text = re.sub(r"\s+", "", answer)
+    if len(text) < 10:
+        # 短回答交给追问逻辑处理，不视为乱码
+        return False
+    unique_ratio = len(set(text)) / len(text)
+    if unique_ratio >= 0.45:
+        return False
+    lowered = text.lower()
+    for i in range(len(lowered) - 3):
+        bigram = lowered[i : i + 2]
+        if bigram.strip() and lowered.count(bigram) >= 3:
+            return True
+    # 用字多样性极低（如"啊啊啊啊啊啊"），无需重复片段也视为无意义
+    return unique_ratio < 0.25
+
+
+def _mode_meaningless_reply(interview_mode: str) -> str:
+    """无效输入的重答提示，语气按模式区分，但都必须如实指出问题。"""
+    replies = {
+        "HR面": "刚才的回答似乎没有录入完整内容，可能是误操作。可以重新回答一下刚才的问题吗？",
+        "技术面": "这段回答没有有效内容，无法进行评估。请针对刚才的问题给出具体回答。",
+        "压力面": "这就是你的回答？一串没有意义的字符。面试中这就是直接淘汰项——再给你一次机会，认真回答。",
+        "反馈教练": "看起来这条回答可能是误输入，还没有包含可以分析的内容。别着急，我们再来一次：试着用一两句话说清楚你的经历，我会在你回答后给出具体建议。",
+    }
+    return replies.get(interview_mode, replies["技术面"])
+
+
 # 空泛表达与夸大/绝对化表达词表，用于识别回答中的表达风险（需求 #15）。
 VAGUE_PHRASES = [
     "一些", "比较好", "差不多", "还可以", "很多", "一定程度", "相关经验",
@@ -320,15 +424,95 @@ def _join_feedback(existing: Any, extra: str, limit: int) -> str:
     return _strip_markdown(text)[:limit]
 
 
-def should_followup(answer: str, question: str = "") -> bool:
+def should_followup(answer: str, question: str = "", interview_mode: str = DEFAULT_INTERVIEW_MODE) -> bool:
+    """判断是否需要追问。规则层处理极端情况，LLM 做语义级判断。
+
+    各模式的追问策略不同：
+    - HR面：关注是否缺少具体事例，不强制技术关键词
+    - 技术面：要求技术细节和量化结果
+    - 压力面：倾向追问施压，但回答足够完整时放过
+    - 反馈教练：少追问，仅在明显不完整时引导补充
+    """
     stripped = answer.strip()
+
+    # ── 规则层：无论哪种模式都适用的硬性触发 ──
+    # 回答为空或极短（不到一句话），任何模式都必须追问
+    if len(stripped) < 15:
+        return True
+    # 题目要点覆盖不足，任何模式都应追问
     if question and _missing_question_requirements(question, stripped):
         return True
-    if len(stripped) < 50:
+
+    # ── LLM 语义判断：可用的前提下让模型判断回答质量 ──
+    if _llm_enabled():
+        return _llm_should_followup(question, stripped, interview_mode)
+
+    # ── 规则兜底（LLM 不可用时）：按模式分别判断 ──
+    return _rule_should_followup(stripped, interview_mode)
+
+
+def _llm_should_followup(question: str, answer: str, interview_mode: str) -> bool:
+    """用 LLM 做语义级的追问判断，避免硬编码规则的死板。"""
+    mode_criteria = {
+        "HR面": "回答缺少具体事例、个人感受或真实动机描述",
+        "技术面": "回答缺少具体技术动作、量化结果或个人贡献说明",
+        "压力面": "回答过于圆滑、缺乏实质内容，或明显在回避问题",
+        "反馈教练": "回答严重缺少细节，无法据此给出有意义的改进建议",
+    }
+    criteria = mode_criteria.get(interview_mode, mode_criteria["技术面"])
+    prompt = f"""你正在判断面试中是否需要追问候选人。
+
+面试问题：{question}
+候选人回答：{answer}
+
+当前是{interview_mode}，需要追问的标准是：{criteria}。
+
+请判断：这个回答是否需要追问？只输出"是"或"否"，不要输出其他内容。"""
+    result = _safe_call_llm(
+        system_prompt=f"你是{interview_mode}的资深面试官，判断是否需要追问。只输出一个字。",
+        user_prompt=prompt,
+        fallback="",
+        temperature=TEMP_JUDGE,
+        max_tokens=10,
+    ).strip()
+    if "是" in result:
         return True
-    if not _contains_tech_keywords(stripped):
+    if "否" in result:
+        return False
+    # LLM 输出不可解析时退回规则
+    return _rule_should_followup(answer, interview_mode)
+
+
+def _rule_should_followup(answer: str, interview_mode: str) -> bool:
+    """LLM 不可用时的规则兜底，按模式区分触发条件。"""
+    if interview_mode == "HR面":
+        # HR 面不强制技术关键词，关注事例和感受
+        if len(answer) < 40:
+            return True
+        if "负责" in answer and not _contains_quantifier(answer):
+            return True
+        return False
+
+    if interview_mode == "压力面":
+        # 压力面倾向追问施压，但完整回答也放过
+        if len(answer) < 60:
+            return True
+        if not _contains_quantifier(answer) and len(answer) < 100:
+            return True
+        return False
+
+    if interview_mode == "反馈教练":
+        # 教练模式少追问，只在明显不够时引导
+        if len(answer) < 40:
+            return True
+        return False
+
+    # 技术面（默认）：要求技术细节 + 量化
+    if len(answer) < 50:
         return True
-    if "负责" in stripped and not _contains_quantifier(stripped):
+    if not _contains_tech_keywords(answer):
+        return True
+    if "负责" in answer and not _contains_quantifier(answer):
         return True
     return False
 
@@ -421,10 +605,29 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
     first_answer = slot.get("first_answer")
     interview_mode = state.get("interview_mode", DEFAULT_INTERVIEW_MODE)
 
+    # 无效输入拦截：乱码/无意义字符不进入追问和评分流程，
+    # 直接要求重答（不消耗追问次数，也不产生分数）。
+    if _is_meaningless_answer(answer):
+        return {
+            "is_followup": False,
+            "followup_question": None,
+            "score": None,
+            "feedback": _mode_meaningless_reply(interview_mode),
+            "dimension_scores": None,
+            "next_question": questions[idx],
+            "current_index": idx,
+            "total_questions": total,
+            "session_status": "in_progress",
+            "strengths": "",
+            "issues": "",
+            "improvement_suggestions": "",
+            "agent_state": state,
+        }
+
     if not first_answer:
         slot["first_answer"] = answer
         missing_requirements = _missing_question_requirements(questions[idx], answer)
-        if should_followup(answer, question=questions[idx]):
+        if should_followup(answer, question=questions[idx], interview_mode=interview_mode):
             followup = _generate_followup(
                 question=questions[idx],
                 answer=answer,
@@ -605,7 +808,7 @@ def _parse_resume(resume_text: str) -> Dict[str, Any]:
         system_prompt="你是简历解析专家。只输出 JSON，不要任何其他文字。",
         user_prompt=prompt,
         fallback=fallback,
-        temperature=0.3,
+        temperature=TEMP_ANALYSIS,
     )
     parsed = _parse_json_fallback(result)
     return parsed if isinstance(parsed, dict) else _parse_resume_by_rules(resume_text)
@@ -636,6 +839,23 @@ def _analyze_job_requirements(
     position_bucket = normalize_position(target_position)
     real_summary = get_position_job_summary(position_bucket, job_id)
     profile_context = role_profile_context(target_position)
+    has_real_data = not real_summary.startswith("暂无")
+
+    if has_real_data:
+        data_constraint = (
+            "请结合上面的真实职责与要求总结，不要引入资料之外的技能要求。"
+            "【相关性校验】若真实岗位资料的方向与目标岗位名称明显不符"
+            "（例如目标是 3D 美术岗、资料却是内容运营/视频剪辑岗），"
+            "说明岗位库数据不匹配，此时以岗位名称的行业常识为主，忽略不相关的资料。"
+        )
+    else:
+        # 无真实岗位数据时，LLM 只能凭常识概括通用能力，
+        # 明确禁止编造具体工具/业务要求（实测中曾编造出"视频剪辑、SEO"等错位要求污染评分）。
+        data_constraint = (
+            "【注意】岗位库暂无该岗位的真实数据。你只能基于该岗位名称做行业常识性的通用概括，"
+            "禁止编造具体的软件工具、业务指标或细分方向要求；不确定的内容一律不写。"
+        )
+
     prompt = f"""目标岗位：{target_position}
 面试模式：{interview_mode}
 
@@ -645,7 +865,8 @@ def _analyze_job_requirements(
 文本知识库岗位画像：
 {profile_context or "（无）"}
 
-请用 3-5 句话总结这个岗位在{interview_mode}中的核心关注点、常见面试重点和典型工作场景，需结合上面的真实职责与要求。
+请用 3-5 句话总结这个岗位在{interview_mode}中的核心关注点、常见面试重点和典型工作场景。
+{data_constraint}
 {mode_hint}"""
     fallback = (
         f"{target_position} 岗位通常关注技术基础、项目落地能力、沟通协作和问题排查能力。\n"
@@ -656,7 +877,7 @@ def _analyze_job_requirements(
         system_prompt="你是资深技术面试官，熟悉各岗位的 JD 和面试要点。",
         user_prompt=prompt,
         fallback=fallback,
-        temperature=0.5,
+        temperature=TEMP_ANALYSIS,
     )
 
 
@@ -721,13 +942,19 @@ def _generate_questions(
 {mode_instruction}
 请优先从题库参考中选取或改写题目，并结合候选人简历和真实岗位职责进行个性化调整。
 
+【出题硬性要求】
+1. 每道题只聚焦一个核心问题，禁止在一道题里堆砌多个子问题或要求候选人逐项罗列。
+2. 题目长度控制在 80 字以内，简洁有力。
+3. 不要求候选人现场写代码片段或画图，口头描述思路即可。
+4. 结合简历时只引用一个最相关的项目点，不要强行串联多个项目。
+
 只输出 JSON 数组，例如 ["题目1", "题目2"]。
 """
     result = _safe_call_llm(
-        system_prompt=f"你是{interview_mode}的资深面试官。只输出 JSON 数组。",
+        system_prompt=_mode_persona(interview_mode, "question") + "只输出 JSON 数组。",
         user_prompt=prompt,
         fallback=json.dumps(fallback_questions, ensure_ascii=False),
-        temperature=0.8,
+        temperature=TEMP_INTERACTIVE,
     )
     parsed = _parse_json_fallback(result)
     questions = [str(item).strip() for item in parsed] if isinstance(parsed, list) else []
@@ -746,10 +973,22 @@ def _generate_questions(
 
 def _mode_analysis_hint(interview_mode: str) -> str:
     hints = {
-        "HR面": "侧重软技能、文化匹配和职业素养评估。",
-        "技术面": "侧重技术深度、项目经验和问题解决能力。",
-        "压力面": "侧重抗压能力、临场反应和真实水平暴露。",
-        "反馈教练": "侧重当前水平摸底，以便给出针对性提升建议。",
+        "HR面": (
+            "你需要站在 HR 视角，分析这个岗位对候选人软技能、职业稳定性、"
+            "价值观和团队契合度的要求，不涉及具体技术栈细节。"
+        ),
+        "技术面": (
+            "你需要站在技术负责人视角，分析这个岗位的核心技术栈、"
+            "项目落地难点和常见技术考察点，聚焦工程实现能力。"
+        ),
+        "压力面": (
+            "你需要分析这个岗位最真实的高压工作场景（如紧急上线、线上事故、"
+            "需求频繁变更），找出候选人最容易被挑战和质疑的薄弱环节。"
+        ),
+        "反馈教练": (
+            "你需要分析这个岗位的核心能力模型，找出初级候选人最常见的"
+            "能力短板和最容易提升的维度，便于后续给出可执行建议。"
+        ),
     }
     return hints.get(interview_mode, "")
 
@@ -757,35 +996,39 @@ def _mode_analysis_hint(interview_mode: str) -> str:
 def _mode_question_allocation(interview_mode: str):
     allocations = {
         "HR面": (
-            "1-2 题：自我介绍与职业规划\n"
-            "3-4 题：团队协作与沟通\n"
-            "5-6 题：价值观与文化匹配\n"
-            "7 题：抗压与情绪管理\n"
-            "8 题：情景模拟",
-            "题目应聚焦软技能、团队合作、职业规划和价值观。",
+            "1-2 题：自我介绍与职业规划（必须包含动机和长期目标）\n"
+            "3-4 题：团队协作与沟通（要求举出真实合作/冲突案例）\n"
+            "5-6 题：价值观与文化匹配（如加班态度、公司文化理解）\n"
+            "7 题：抗压与情绪管理（非技术场景，侧重人际压力）\n"
+            "8 题：情景模拟（职场人际或取舍类场景）",
+            "【严格约束】题目只涉及软技能、动机、价值观和职场行为，"
+            "禁止出现任何技术栈、代码、架构相关词汇。",
         ),
         "技术面": (
-            "1-2 题：自我介绍与动机类\n"
-            "3-5 题：项目经历深挖类\n"
-            "6-7 题：技术基础类\n"
-            "8 题：行为问题类",
-            "题目应聚焦技术深度、项目落地能力和问题排查思路。",
+            "1-2 题：技术自我介绍与岗位动机（结合简历技术栈）\n"
+            "3-5 题：项目经历深挖（架构选型、难点攻克、个人贡献边界）\n"
+            "6-7 题：技术基础与场景设计（核心技术栈原理或系统设计）\n"
+            "8 题：工程协作类（Code Review、技术分歧处理）",
+            "【严格约束】每道题都要落到具体技术动作上，"
+            "禁止出现纯软技能题（如'你怎么和同事相处'）。",
         ),
         "压力面": (
-            "1-2 题：自我认知与短板\n"
-            "3-4 题：失败经历深挖\n"
-            "5-6 题：高压场景模拟\n"
-            "7 题：极限挑战\n"
-            "8 题：自我辩护",
-            "题目应有挑战性和压迫感，测试候选人在压力下的真实反应。",
+            "1-2 题：尖锐质疑自我认知（如'凭什么录用你'）\n"
+            "3-4 题：失败/失误经历连续深挖（要求承认并复盘真实失败）\n"
+            "5-6 题：高压场景两难选择（时间不够、资源不足、被否决）\n"
+            "7 题：极限挑战（极短 deadline 或不熟悉领域交付）\n"
+            "8 题：自我辩护（在质疑中为自己辩护）",
+            "【严格约束】每道题都要带质疑、挑战或压迫感，语气尖锐直接，"
+            "禁止使用温和、鼓励性的措辞。",
         ),
         "反馈教练": (
-            "1-2 题：自我认知与目标\n"
-            "3-4 题：项目复盘\n"
-            "5-6 题：技能自评\n"
-            "7 题：STAR结构化练习\n"
-            "8 题：自我提升计划",
-            "题目应温和且有引导性，帮助候选人发现提升空间。",
+            "1-2 题：自我认知与求职目标（引导真实表达现状）\n"
+            "3-4 题：项目复盘（引导说出成功点和遗憾点）\n"
+            "5-6 题：技能自评与差距分析（自评 + 说明依据）\n"
+            "7 题：STAR 结构化表达练习\n"
+            "8 题：自我提升计划（引导制定可执行计划）",
+            "【严格约束】语气温和、有引导性，题目末尾可带提示"
+            "（如'可以结合一个具体项目来谈'），禁止使用质疑或施压措辞。",
         ),
     }
     return allocations.get(interview_mode, allocations["技术面"])
@@ -793,20 +1036,51 @@ def _mode_question_allocation(interview_mode: str):
 
 def _mode_followup_tone(interview_mode: str) -> str:
     tones = {
-        "HR面": "请友好地引导对方补充更多具体事例和真实感受。",
-        "技术面": "请引导对方补充具体技术动作、量化结果和个人贡献。",
-        "压力面": "请用尖锐的角度追问，测试对方在压力下的真实水平。",
-        "反馈教练": "请用鼓励的语气引导对方补充细节，为后续建议做准备。",
+        "HR面": (
+            "语气友好但有穿透力，聚焦'具体事例+真实感受'。"
+            "例如：'能举一个具体发生过的例子吗？当时你是怎么想的？'"
+        ),
+        "技术面": (
+            "语气专业直接，聚焦'技术动作+量化结果+个人贡献边界'。"
+            "例如：'这个方案里哪些是你独立完成的？性能提升了多少？'"
+        ),
+        "压力面": (
+            "语气尖锐、带质疑，制造适度压迫感。"
+            "例如：'这个结果听起来很普通，你觉得凭什么算亮点？'"
+        ),
+        "反馈教练": (
+            "语气温和鼓励，先肯定再引导补充。"
+            "例如：'这个方向不错，如果能再具体说说你当时是怎么做的就更好了。'"
+        ),
     }
-    return tones.get(interview_mode, "请引导对方补充具体技术动作、量化结果和个人贡献。")
+    return tones.get(interview_mode, tones["技术面"])
 
 
 def _mode_scoring_hint(interview_mode: str) -> str:
     hints = {
-        "HR面": "评分时侧重沟通表达、价值观匹配和团队意识，技术维度适当降低权重。",
-        "技术面": "评分时侧重技术深度、方案可行性和项目落地能力。",
-        "压力面": "评分时侧重抗压表现、逻辑清晰度和临场反应，回答本身可能不完美但能体现真实水平。",
-        "反馈教练": "评分后要以鼓励为主，问题描述温和，改进建议要具体可执行。",
+        "HR面": (
+            "评分侧重：clarity（表达清晰度）和 position_match（文化匹配）权重最高；"
+            "star_completeness 看是否有完整的事例叙述；"
+            "professional_accuracy 评估自我认知的真实性而非技术正确性；"
+            "不要求技术关键词，回答中没有技术名词不扣分。"
+        ),
+        "技术面": (
+            "评分侧重：content_relevance 和 professional_accuracy 权重最高，"
+            "考察技术细节是否准确、方案是否可行；"
+            "star_completeness 要求有清晰的问题→行动→结果链路；"
+            "回答中出现技术错误要明显扣分。"
+        ),
+        "压力面": (
+            "评分侧重：重点评估候选人在压力下是否保持逻辑清晰、不慌乱、不回避；"
+            "回答内容本身的完美度可以降低要求，但闪烁其词、明显说谎要重扣；"
+            "overall_comment 中必须评价候选人的抗压表现。"
+        ),
+        "反馈教练": (
+            "评分严格参照锚点，不要上浮；教练模式的特殊性体现在反馈语气而非分数："
+            "issues 用温和语气描述（说'可以更好'而不是'错误'）；"
+            "improvement_suggestions 必须给 3 条以上，每条具体到可以直接执行；"
+            "overall_comment 先肯定回答中真实存在的可取之处（没有就如实跳过），再指出 1-2 个最值得提升的点。"
+        ),
     }
     return hints.get(interview_mode, "")
 
@@ -898,10 +1172,10 @@ def _generate_followup(
 {focus_line}{tone}
 只输出追问本身，不超过 80 字。"""
     return _safe_call_llm(
-        system_prompt=f"你是{interview_mode}的面试官。追问要{tone}",
+        system_prompt=_mode_persona(interview_mode, "followup") + f"追问要求：{tone}",
         user_prompt=prompt,
         fallback=fallback,
-        temperature=0.5,
+        temperature=TEMP_INTERACTIVE,
     )
 
 
@@ -928,6 +1202,27 @@ def _score_answer(
 4. star_completeness：20 分
 5. position_match：10 分
 
+评分锚点（必须参照，避免随意打分）：
+- 每个维度得分率 90%+：回答精准、有细节、有量化，几乎无可挑剔
+- 70-89%：内容切题、有实质信息，但深度或完整度略有不足
+- 50-69%：切题但偏笼统，缺少具体细节或量化结果
+- 30-49%：大部分内容空泛或偏离题目，仅有少量有效信息
+- 30% 以下：几乎未回答题目或完全无关
+注意：没有回答能轻易拿到所有维度满分，总分超过 90 需要真正出色的回答。
+
+诚实底线（优先级高于一切语气要求）：
+- strengths 必须基于回答中真实存在的内容，禁止为了鼓励而编造并不存在的优点。
+- 如果回答空泛、答非所问或几乎没有有效信息，strengths 应如实写"本次回答暂无可提炼的亮点"，
+  issues 直接指出核心问题，overall_comment 也要如实反映，不得套用"已经开始思考""态度积极"等万能话术。
+- 鼓励只能体现在建议的建设性上，不能体现在对事实的美化上。
+
+分数与评语一致性（必须遵守）：
+- 各维度分数必须与 issues 描述的严重程度一致，禁止"评语说严重偏离、分数却给高分"。
+- 若 issues 指出"未回答问题核心/答非所问/完全偏离"，content_relevance 不得超过 50% 得分率。
+- 若 issues 指出"回避核心质疑/闪烁其词"，professional_accuracy 不得超过 60% 得分率。
+- 若第一轮回答空泛、仅靠追问补充内容，star_completeness 不得超过 75% 得分率。
+- 总分超过 90 意味着回答几乎无可挑剔：只要 issues 中有实质性批评，总分就不得上 90。
+
 {mode_scoring_hint}
 
 请严格输出 JSON：
@@ -950,12 +1245,15 @@ def _score_answer(
         "issues": "缺少具体细节和量化数据。",
         "improvement_suggestions": "补充技术动作说明；加入量化成果；明确个人贡献。",
     }
+    fallback_json = json.dumps(fallback, ensure_ascii=False)
     result = _safe_call_llm(
-        system_prompt=f"你是{interview_mode}的严格但公正的面试官。只输出 JSON，不要其他内容。",
+        system_prompt=_mode_persona(interview_mode, "scoring") + "只输出 JSON，不要其他内容。",
         user_prompt=prompt,
-        fallback=json.dumps(fallback, ensure_ascii=False),
-        temperature=0.3,
+        fallback=fallback_json,
+        temperature=TEMP_EVALUATION,
     )
+    # LLM 是否真正返回了评分（区别于降级使用 fallback）
+    llm_scored = _llm_enabled() and result.strip() != fallback_json.strip()
     parsed = _parse_json_fallback(result)
     raw_scores = parsed if isinstance(parsed, dict) else fallback
 
@@ -976,9 +1274,10 @@ def _score_answer(
         str(raw_scores.get("overall_comment") or fallback["overall_comment"])
     )[:160]
 
-    # 规则兜底修正 + 表达风险识别（需求 #15）。
-    scores = _apply_score_rules(scores, answer.strip())
-    scores = _apply_question_relevance_rules(scores, question, answer.strip())
+    # 规则修正 + 表达风险识别（需求 #15）。
+    # Agent 已评分时规则只做软纠偏（Agent 优先）；降级时规则主导压分。
+    scores = _apply_score_rules(scores, answer.strip(), interview_mode, strict=not llm_scored)
+    scores = _apply_question_relevance_rules(scores, question, answer.strip(), strict=not llm_scored)
 
     # 评分校准（进阶 #2）：对照 Agent(LLM) 评分与纯规则评分，辅助评估 Agent 稳定性。
     base_total = sum(
@@ -986,8 +1285,9 @@ def _score_answer(
         for key in DIMENSION_MAX
     )
     scores["llm_score"] = base_total if _llm_enabled() else None
-    rule_only = _apply_score_rules(dict(DEFAULT_DIMENSION_SCORES), answer.strip())
-    rule_only = _apply_question_relevance_rules(rule_only, question, answer.strip())
+    # 纯规则基线：始终用严格规则，作为校准对照
+    rule_only = _apply_score_rules(dict(DEFAULT_DIMENSION_SCORES), answer.strip(), interview_mode, strict=True)
+    rule_only = _apply_question_relevance_rules(rule_only, question, answer.strip(), strict=True)
     scores["rule_score"] = rule_only["total"]
     return scores
 
@@ -1000,26 +1300,55 @@ def _clamp_score(value: Any, max_score: int) -> int:
     return max(0, min(max_score, number))
 
 
-def _apply_score_rules(scores: Dict[str, Any], answer: str) -> Dict[str, Any]:
-    """基于规则对评分做兜底修正，并识别表达风险（需求 #15）。
+def _apply_score_rules(
+    scores: Dict[str, Any],
+    answer: str,
+    interview_mode: str = DEFAULT_INTERVIEW_MODE,
+    strict: bool = True,
+) -> Dict[str, Any]:
+    """基于规则对评分做修正，并识别表达风险（需求 #15）。
 
-    返回的分数字典会带上 vague_flags / biased_flags，便于结构化反馈与评分校准。
+    规则与 Agent 的优先级：
+    - strict=True（LLM 未参与评分）：规则主导，按模式硬性压分。
+    - strict=False（LLM 已评分）：Agent 语义判断优先，规则只保留
+      极端情况护栏（回答过短）和软性纠偏，不再用关键词硬压分。
     """
     corrected = dict(scores)
     stripped = answer.strip()
+
+    # 极端护栏：无论是否有 LLM，回答过短都说明内容不足
     if len(stripped) < 20:
         corrected["content_relevance"] = min(corrected["content_relevance"], 10)
     if len(stripped) < 50:
         corrected["star_completeness"] = min(corrected["star_completeness"], 10)
-    if not _contains_tech_keywords(stripped):
-        corrected["professional_accuracy"] = min(corrected["professional_accuracy"], 10)
-    if not _contains_quantifier(stripped):
-        corrected["star_completeness"] = min(corrected["star_completeness"], 12)
+
+    if strict:
+        # ── 规则主导（无 LLM 兜底）：按模式硬性压分 ──
+        if interview_mode == "技术面":
+            if not _contains_tech_keywords(stripped):
+                corrected["professional_accuracy"] = min(corrected["professional_accuracy"], 10)
+            if not _contains_quantifier(stripped):
+                corrected["star_completeness"] = min(corrected["star_completeness"], 12)
+        elif interview_mode == "HR面":
+            if not _contains_quantifier(stripped) and len(stripped) < 80:
+                corrected["star_completeness"] = min(corrected["star_completeness"], 14)
+        elif interview_mode == "压力面":
+            if len(stripped) < 40 and not _contains_quantifier(stripped):
+                corrected["professional_accuracy"] = min(corrected["professional_accuracy"], 12)
+        # 反馈教练：不做硬性压分，以鼓励为主
+    else:
+        # ── Agent 优先：关键词规则退化为软性纠偏 ──
+        # 只有"回答明显短且缺关键要素"时才轻压，避免误伤语义上合格的回答
+        if interview_mode == "技术面" and not _contains_tech_keywords(stripped) and len(stripped) < 60:
+            corrected["professional_accuracy"] = min(corrected["professional_accuracy"], 15)
 
     # 表达风险识别：空泛表达 -> 降表达清晰度；夸大/绝对化 -> 降专业准确性。
+    # LLM 已评分时压分放缓（Agent 优先），仅保留提示性反馈。
     vague, biased = _detect_expression_risks(stripped)
+    vague_cap = 10 if strict else 14
+    biased_cap = 10 if strict else 14
     if vague:
-        corrected["clarity"] = min(corrected["clarity"], 10)
+        corrected["clarity"] = min(corrected["clarity"], vague_cap)
         flag_text = "、".join(vague)
         issues = corrected.get("issues", "") or ""
         corrected["issues"] = _strip_markdown(
@@ -1030,7 +1359,7 @@ def _apply_score_rules(scores: Dict[str, Any], answer: str) -> Dict[str, Any]:
             (suggestion + "；用 STAR 补充具体动作与量化结果，避免空泛词")[:300]
         )
     if biased:
-        corrected["professional_accuracy"] = min(corrected["professional_accuracy"], 10)
+        corrected["professional_accuracy"] = min(corrected["professional_accuracy"], biased_cap)
         flag_text = "、".join(biased)
         issues = corrected.get("issues", "") or ""
         corrected["issues"] = _strip_markdown(
@@ -1050,7 +1379,9 @@ def _apply_question_relevance_rules(
     scores: Dict[str, Any],
     question: str,
     answer: str,
+    strict: bool = True,
 ) -> Dict[str, Any]:
+    """题目要点覆盖修正。strict=True 时硬压分；Agent 已评分时（False）软纠偏。"""
     corrected = dict(scores)
     missing_requirements = _missing_question_requirements(question, answer)
     corrected["missing_question_requirements"] = missing_requirements
@@ -1060,8 +1391,11 @@ def _apply_question_relevance_rules(
         return corrected
 
     missing_text = "；".join(missing_requirements)
-    corrected["content_relevance"] = min(corrected["content_relevance"], 12)
-    corrected["clarity"] = min(corrected["clarity"], 14)
+    # Agent 已做语义评分时，关键词规则可能误伤，压分放缓
+    relevance_cap = 12 if strict else 16
+    clarity_cap = 14 if strict else 17
+    corrected["content_relevance"] = min(corrected["content_relevance"], relevance_cap)
+    corrected["clarity"] = min(corrected["clarity"], clarity_cap)
     corrected["issues"] = _join_feedback(
         corrected.get("issues"),
         f"回答与题目要点覆盖不足，漏答：{missing_text}",
@@ -1144,7 +1478,7 @@ def _rewrite_star(question: str, answer: str, target_position: str) -> str:
                 "A（行动）：我拆解需求，选择合适技术方案，完成核心功能并补充测试。\n"
                 "R（结果）：功能稳定交付，后续可继续用数据量化效率、性能或质量提升。"
             ),
-            temperature=0.6,
+            temperature=TEMP_EVALUATION,
         )
     )
 
@@ -1175,7 +1509,7 @@ def _generate_practice_plan(
                 "2. 针对目标岗位整理核心技术清单，并为每项准备一个项目应用例子。\n"
                 "3. 回答时加入数字化结果，例如性能提升、缺陷减少或交付周期缩短。"
             ),
-            temperature=0.5,
+            temperature=TEMP_EVALUATION,
         )
     )
 

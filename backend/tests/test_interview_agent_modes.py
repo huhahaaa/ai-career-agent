@@ -109,3 +109,43 @@ def test_expression_risk_and_markdown_cleanup_helpers():
     assert "比较好" in vague
     assert "绝对" in biased
     assert _strip_markdown("**重点** `FastAPI`") == "重点 FastAPI"
+
+
+def test_meaningless_answer_detection():
+    assert agent._is_meaningless_answer("啊打发嘎达嘎达发阿发阿发打发发发打发的") is True
+    assert agent._is_meaningless_answer("啊啊啊啊啊啊啊啊啊啊") is True
+    # 短回答不算乱码，走追问流程引导补充
+    assert agent._is_meaningless_answer("短") is False
+    assert agent._is_meaningless_answer("我负责了一个项目。") is False
+    # 正常排比表述不误伤
+    assert agent._is_meaningless_answer(
+        "我负责 FastAPI 接口开发，我负责数据库设计，我负责缓存优化和慢查询治理。"
+    ) is False
+    assert agent._is_meaningless_answer(
+        "我通过慢查询分析和接口缓存把核心接口响应时间减少了30%，同时补充了日志和监控告警。"
+    ) is False
+
+
+def test_meaningless_answer_rejected_without_scoring():
+    state = start_interview(
+        resume_text="熟悉 Python、FastAPI、React 和项目协作。",
+        target_position="Python 后端工程师",
+        interview_mode="反馈教练",
+    )["agent_state"]
+
+    result = evaluate_answer(state, "啊打发嘎达嘎达发阿发阿发打发发发打发的")
+
+    assert result["score"] is None
+    assert result["is_followup"] is False
+    assert "误输入" in result["feedback"] or "再来一次" in result["feedback"]
+    # 不消耗回答进度：current_index 不变，first_answer 不写入
+    assert result["current_index"] == 0
+    assert state["answers"][0].get("first_answer") is None
+
+    # 正常回答仍可被接受
+    result2 = evaluate_answer(
+        state,
+        "我负责 FastAPI 接口开发和 SQLAlchemy 数据模型设计，通过慢查询分析和接口缓存"
+        "把核心接口响应时间减少 30%，并补充日志方便排查问题。",
+    )
+    assert result2["score"] is not None or result2["is_followup"] is True
