@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useBeforeUnload, useLocation } from 'react-router-dom';
 import { Camera, Mic, MicOff, VideoOff, Volume2, VolumeX } from 'lucide-react';
-import { endInterview, getResumeDetail, getResumes, sendMessage, startInterview } from '../api/client';
+import { endInterview, getResumeDetail, getResumes, sendMessage, startInterview, synthesizeSpeech } from '../api/client';
 import RadarChart from '../components/RadarChart';
+import VRMInterviewer from '../components/VRMInterviewer';
 import { mapDimensionScores } from '../utils/dimensionLabels';
 
 import {
@@ -17,6 +18,134 @@ import {
   countSpeechUnits,
   defaultVisionAnalysis,
 } from '../utils/interviewMediaAnalysis';
+
+const FLOATING_INTERVIEWER_WIDTH = 420;
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getDefaultInterviewerPosition() {
+  if (typeof window === 'undefined') return { x: 24, y: 84 };
+  return {
+    x: Math.max(12, window.innerWidth - FLOATING_INTERVIEWER_WIDTH - 24),
+    y: 84,
+  };
+}
+
+function getSpeakableInterviewerText(text) {
+  let cleaned = (text || '').trim();
+  if (!cleaned) return '';
+
+  const followupMatch = cleaned.match(/追问[:：]\s*([\s\S]+)$/);
+  if (followupMatch) {
+    cleaned = followupMatch[1];
+  } else {
+    const questionMatches = [...cleaned.matchAll(/第\s*\d+\s*\/\s*\d+\s*题[:：]\s*([\s\S]+)$/g)];
+    if (questionMatches.length) {
+      cleaned = questionMatches[questionMatches.length - 1][1];
+    } else if (cleaned.includes('本轮题目已完成')) {
+      cleaned = '全部题目已完成，可以生成面试报告。';
+    }
+  }
+
+  return cleaned
+    .replace(/【[^】]+】/g, '')
+    .replace(/^(追问|问题)[:：]\s*/, '')
+    .replace(/^第\s*\d+\s*\/\s*\d+\s*题[:：]\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
+function FloatingInterviewer({ state, active }) {
+  const panelRef = useRef(null);
+  const dragRef = useRef(null);
+  const [position, setPosition] = useState(getDefaultInterviewerPosition);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const handleResize = () => {
+      setPosition(current => ({
+        x: clampNumber(current.x, 8, Math.max(8, window.innerWidth - 140)),
+        y: clampNumber(current.y, 8, Math.max(8, window.innerHeight - 120)),
+      }));
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [active]);
+
+  const handleDragStart = event => {
+    if (event.button !== 0) return;
+    if (event.target.closest('button')) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleDragMove = event => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    setPosition({
+      x: clampNumber(event.clientX - dragRef.current.offsetX, 8, Math.max(8, window.innerWidth - 140)),
+      y: clampNumber(event.clientY - dragRef.current.offsetY, 8, Math.max(8, window.innerHeight - 120)),
+    });
+  };
+
+  const handleDragEnd = event => {
+    if (!dragRef.current || dragRef.current.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+
+  const resetPosition = () => {
+    const panel = panelRef.current;
+    if (panel) {
+      panel.style.width = '';
+      panel.style.height = '';
+    }
+    setPosition(getDefaultInterviewerPosition());
+  };
+
+  if (!active) return null;
+
+  return (
+    <div
+      ref={panelRef}
+      className={`floating-interviewer-panel interviewer-${state.mode}`}
+      style={{ left: `${position.x}px`, top: `${position.y}px` }}
+      aria-label={`AI 面试官状态：${state.label}`}
+    >
+      <div
+        className="floating-interviewer-titlebar"
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
+      >
+        <div>
+          <span className="interviewer-status-dot" />
+          <strong>AI 面试官</strong>
+          <span>{state.label}</span>
+        </div>
+        <button className="floating-interviewer-reset" type="button" onClick={resetPosition}>
+          复位
+        </button>
+      </div>
+      <div className="floating-interviewer-body">
+        <VRMInterviewer state={state} />
+      </div>
+      <div className="floating-interviewer-caption">
+        <strong>{state.title}</strong>
+        <p>{state.caption}</p>
+      </div>
+    </div>
+  );
+}
 
 export default function MockInterview() {
   const location = useLocation();
@@ -33,6 +162,7 @@ export default function MockInterview() {
   const [feedback, setFeedback] = useState([]);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [interviewReadyToReport, setInterviewReadyToReport] = useState(false);
   const [finalReport, setFinalReport] = useState(null);
   const [error, setError] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
@@ -76,28 +206,113 @@ export default function MockInterview() {
   const visionRunningRef = useRef(false);
   const lastVisionSampleRef = useRef(0);
   const lastSpokenMessageRef = useRef('');
+  const voiceAudioRef = useRef(null);
+  const voiceRequestIdRef = useRef(0);
+  const allowHistoryLeaveRef = useRef(false);
+  const interviewLocked = Boolean(sessionId && !ended);
 
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'smooth' });
+    document.body.classList.toggle('interview-immersive-active', interviewLocked);
+    return () => document.body.classList.remove('interview-immersive-active');
+  }, [interviewLocked]);
+
+  useBeforeUnload(
+    useCallback((event) => {
+      if (!interviewLocked) return;
+      event.preventDefault();
+      event.returnValue = '';
+    }, [interviewLocked]),
+    { capture: true },
+  );
+
+  useEffect(() => {
+    if (!interviewLocked) return undefined;
+    allowHistoryLeaveRef.current = false;
+    window.history.pushState({ interviewLocked: true }, '', window.location.href);
+
+    const handlePopState = () => {
+      if (allowHistoryLeaveRef.current) return;
+      const shouldLeave = window.confirm(
+        interviewReadyToReport
+          ? '面试已完成但报告尚未生成，离开后将不会生成本次报告。确定要离开吗？'
+          : '面试尚未完成，离开后本次面试不会生成结果。确定要离开吗？',
+      );
+      if (shouldLeave) {
+        allowHistoryLeaveRef.current = true;
+        window.removeEventListener('popstate', handlePopState);
+        window.history.back();
+      } else {
+        window.history.pushState({ interviewLocked: true }, '', window.location.href);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      allowHistoryLeaveRef.current = false;
+    };
+  }, [interviewLocked, interviewReadyToReport]);
+
+  useEffect(() => {
+    messagesEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages]);
 
-  const speakInterviewerText = text => {
-    if (!voiceOutputEnabled || !window.speechSynthesis || !text?.trim()) return;
-    const cleaned = text
-      .replace(/【[^】]+】/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (!cleaned) return;
+  const stopVoiceOutput = () => {
+    voiceRequestIdRef.current += 1;
+    if (voiceAudioRef.current) {
+      voiceAudioRef.current.pause();
+      voiceAudioRef.current = null;
+    }
+    window.speechSynthesis?.cancel();
+  };
+
+  const speakWithBrowserFallback = cleaned => {
+    if (!window.speechSynthesis) {
+      setVoiceOutputStatus('当前浏览器不支持朗读');
+      return;
+    }
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(cleaned);
     utterance.lang = 'zh-CN';
     utterance.rate = 0.95;
     utterance.pitch = 1;
-    utterance.onstart = () => setVoiceOutputStatus('面试官正在朗读');
+    utterance.onstart = () => setVoiceOutputStatus('本机语音朗读中');
     utterance.onend = () => setVoiceOutputStatus('朗读完成');
     utterance.onerror = () => setVoiceOutputStatus('朗读失败，可继续文字面试');
     window.speechSynthesis.speak(utterance);
+  };
+
+  const speakInterviewerText = async text => {
+    if (!voiceOutputEnabled || !text?.trim()) return;
+    const cleaned = getSpeakableInterviewerText(text);
+    if (!cleaned) return;
+
+    stopVoiceOutput();
+    const requestId = voiceRequestIdRef.current;
+    setVoiceOutputStatus('正在生成面试官语音');
+
+    try {
+      const result = await synthesizeSpeech(cleaned);
+      if (requestId !== voiceRequestIdRef.current || !voiceOutputEnabled) return;
+      if (result?.available && result.audio_base64) {
+        const mediaType = result.media_type || 'audio/mpeg';
+        const audio = new Audio(`data:${mediaType};base64,${result.audio_base64}`);
+        voiceAudioRef.current = audio;
+        audio.onplay = () => setVoiceOutputStatus(`服务端语音朗读中${result.voice ? `：${result.voice}` : ''}`);
+        audio.onended = () => {
+          if (requestId === voiceRequestIdRef.current) setVoiceOutputStatus('朗读完成');
+        };
+        audio.onerror = () => speakWithBrowserFallback(result.text || cleaned);
+        await audio.play();
+        return;
+      }
+      speakWithBrowserFallback(result?.text || cleaned);
+    } catch {
+      if (requestId === voiceRequestIdRef.current) {
+        speakWithBrowserFallback(cleaned);
+      }
+    }
   };
 
   useEffect(() => {
@@ -139,7 +354,7 @@ export default function MockInterview() {
 
   useEffect(() => () => {
     stopSpeechRecognition();
-    window.speechSynthesis?.cancel();
+    stopVoiceOutput();
     stopCamera();
   }, []);
 
@@ -163,6 +378,61 @@ export default function MockInterview() {
     }
     return '';
   }, [listening, speechStats]);
+
+  const interviewerAvatarState = useMemo(() => {
+    const isSpeaking = voiceOutputEnabled && (
+      voiceOutputStatus.includes('语音朗读中')
+      || voiceOutputStatus.includes('面试官正在朗读')
+      || voiceOutputStatus.includes('本机语音朗读中')
+      || voiceOutputStatus.includes('服务端语音朗读中')
+    );
+    if (ended) {
+      return {
+        mode: 'finished',
+        title: '面试已完成',
+        label: '报告已生成',
+        caption: '本轮表现已整理成报告。',
+      };
+    }
+    if (interviewReadyToReport) {
+      return {
+        mode: 'ready',
+        title: '题目已完成',
+        label: '等待报告',
+        caption: '可以生成本次面试报告。',
+      };
+    }
+    if (isSpeaking) {
+      return {
+        mode: 'speaking',
+        title: '正在提问',
+        label: '面试官朗读中',
+        caption: '请听完问题后再开始回答。',
+      };
+    }
+    if (busy) {
+      return {
+        mode: 'thinking',
+        title: '正在分析',
+        label: '思考中',
+        caption: '正在整理反馈和下一轮问题。',
+      };
+    }
+    if (listening) {
+      return {
+        mode: 'listening',
+        title: '正在倾听',
+        label: '听取回答',
+        caption: '保持自然表达即可。',
+      };
+    }
+    return {
+      mode: 'idle',
+      title: '等待回答',
+      label: '在线',
+      caption: '面试官会根据回答继续追问。',
+    };
+  }, [busy, ended, interviewReadyToReport, listening, voiceOutputEnabled, voiceOutputStatus]);
 
   const updateSpeechStats = () => {
     const startedAt = speechStartedAtRef.current;
@@ -561,7 +831,7 @@ export default function MockInterview() {
     setVoiceOutputEnabled(current => {
       const next = !current;
       if (!next) {
-        window.speechSynthesis?.cancel();
+        stopVoiceOutput();
         setVoiceOutputStatus('已关闭');
       } else {
         setVoiceOutputStatus('已开启，下一题将自动朗读');
@@ -595,6 +865,11 @@ export default function MockInterview() {
 
       setSessionId(result.session_id);
       setInterviewMode(result.interview_mode || interviewMode);
+      setInterviewReadyToReport(false);
+      setEnded(false);
+      setFinalReport(null);
+      setScores([]);
+      setFeedback([]);
       setMessages([
         {
           role: 'interviewer',
@@ -611,7 +886,7 @@ export default function MockInterview() {
 
   const handleSend = async () => {
     const answer = input.trim();
-    if (!answer || busy || !sessionId || ended) return;
+    if (!answer || busy || !sessionId || ended || interviewReadyToReport) return;
 
     setMessages(current => [...current, { role: 'user', content: answer, timestamp: new Date().toISOString() }]);
     setInput('');
@@ -626,9 +901,12 @@ export default function MockInterview() {
         setFeedback(current => [...current, result.feedback]);
       }
 
+      const readyToReport = result.session_status === 'ready_to_finish' || (!result.is_followup && !result.next_question);
+      setInterviewReadyToReport(readyToReport);
+
       const responseText = result.is_followup
         ? `追问：${result.followup_question || result.next_question}`
-        : `${result.feedback || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n本轮题目已完成，可以点击“结束面试”生成报告。'}`;
+        : `${result.feedback || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n全部题目已完成，可以点击“生成报告”查看面试结果。'}`;
 
       setMessages(current => {
         const updated = [...current];
@@ -658,8 +936,28 @@ export default function MockInterview() {
     }
   };
 
-  const handleEnd = async () => {
+  const handleExitInterview = () => {
     if (!sessionId || busy) return;
+    const shouldExit = window.confirm('面试尚未完成，退出后本次面试不会生成结果。确定退出吗？');
+    if (!shouldExit) return;
+
+    stopSpeechRecognition();
+    stopVoiceOutput();
+    stopCamera();
+    setSessionId(null);
+    setMessages([]);
+    setScores([]);
+    setFeedback([]);
+    setInput('');
+    setEnded(false);
+    setInterviewReadyToReport(false);
+    setFinalReport(null);
+    setError('');
+  };
+
+  const handleGenerateReport = async () => {
+    if (!sessionId || busy || !interviewReadyToReport) return;
+    if (!window.confirm('确定生成本次面试报告吗？生成后本场面试将完成。')) return;
 
     setBusy(true);
     setError('');
@@ -667,6 +965,7 @@ export default function MockInterview() {
       const report = await endInterview(sessionId);
       setFinalReport(report);
       setEnded(true);
+      setInterviewReadyToReport(false);
     } catch (requestError) {
       setError(requestError.message || '面试报告生成失败');
     } finally {
@@ -747,14 +1046,19 @@ export default function MockInterview() {
             {voiceOutputEnabled ? '朗读开启' : '朗读关闭'}
           </button>
           {!ended && (
-            <button className="btn btn-danger" onClick={handleEnd} disabled={busy}>
-              {busy ? '生成报告中...' : '结束面试'}
+            <button
+              className={interviewReadyToReport ? 'btn btn-primary' : 'btn btn-danger'}
+              onClick={interviewReadyToReport ? handleGenerateReport : handleExitInterview}
+              disabled={busy}
+            >
+              {busy ? (interviewReadyToReport ? '生成报告中...' : '处理中...') : (interviewReadyToReport ? '生成报告' : '退出面试')}
             </button>
           )}
         </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+      <FloatingInterviewer state={interviewerAvatarState} active={interviewLocked} />
       <div className="interview-room">
         <section className="interview-stage">
           <div className="assist-card camera-card immersive-camera-card">
@@ -853,7 +1157,7 @@ export default function MockInterview() {
           <div ref={messagesEnd} />
         </div>
 
-        {!ended && (
+        {!ended && !interviewReadyToReport && (
           <div className="chat-input-area">
             <button
               className={`voice-input-button ${listening ? 'active' : ''}`}
@@ -880,6 +1184,15 @@ export default function MockInterview() {
               </div>
               <span>{interimTranscript || (listening ? '正在等待转写结果，可继续说话' : '语音会写入回答框，可手动修改后提交')}</span>
             </div>
+          </div>
+        )}
+        {!ended && interviewReadyToReport && (
+          <div className="interview-ready-panel">
+            <strong>全部题目已完成</strong>
+            <span>当前面试可以生成报告。生成报告前请不要刷新或离开页面。</span>
+            <button className="btn btn-primary" type="button" onClick={handleGenerateReport} disabled={busy}>
+              {busy ? '生成报告中...' : '生成报告'}
+            </button>
           </div>
         )}
           </div>

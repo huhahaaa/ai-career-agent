@@ -18,7 +18,7 @@ AI Career Agent 是一个面向课程综合项目的求职辅助平台，目标�
 - 向量检索：Chroma + SentenceTransformer，审核通过岗位可进入向量索引。
 - 岗位匹配：根据简历或求职意向返回岗位、匹配分数、推荐理由和数据来源，并保存匹配历史。
 - 简历管理：支持简历文件上传、列表、详情、版本记录、删除和简历审核报告保存。
-- 面试 Agent：支持 8 题生成、回答追问、结构化评分、STAR 改写建议、练习计划和最终报告保存。
+- 面试 Agent：支持 8 题生成、回答追问、结构化评分、STAR 改写建议、练习计划、语音输入和面试官语音播报。
 - Agent 日志：面试启动、回答评分、报告生成和简历审核会写入 `agent_logs`。
 - 数据看板：后端提供真实统计，前端展示简历数、岗位数、面试次数、平均分、技能分布、城市分布和最近面试。
 - 前端联调：React/Vite 页面已接入认证、岗位、匹配、简历、面试、历史和看板入口。
@@ -30,8 +30,7 @@ AI Career Agent 是一个面向课程综合项目的求职辅助平台，目标�
 - HR 面、技术面、压力面和反馈教练等多 Agent 面试模式。
 - 匹配结果中的命中技能、缺失技能、能力缺口和修改建议。
 - 简历版本对比、岗位收藏、投递跟踪和训练计划看板。
-- 语音输入/输出、实时面试、摄像头姿态分析等进阶能力。
-- 最终报告、PPT、演示视频和三天项目日报整理。
+- 外部高质量 TTS、报告导出、PPT、演示视频和三天项目日报整理。
 
 ## 核心流程
 
@@ -101,6 +100,41 @@ LLM_API_KEY=你的 DeepSeek API Key
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-chat
 ```
+
+面试官语音默认使用浏览器本机朗读。若后续接入独立 TTS 服务，可在
+`backend/.env` 中配置：
+
+```env
+TTS_PROVIDER=edge
+TTS_VOICE=zh-CN-YunxiNeural
+```
+
+如果使用豆包/火山引擎语音合成，则配置：
+
+```env
+TTS_PROVIDER=volcengine
+TTS_RESPONSE_FORMAT=mp3
+VOLC_TTS_API_KEY=你的 API Key
+VOLC_TTS_RESOURCE_ID=seed-tts-2.0
+VOLC_TTS_VOICE_TYPE=你的音色 ID
+VOLC_TTS_SAMPLE_RATE=24000
+VOLC_TTS_SPEED_RATIO=1.0
+VOLC_TTS_VOLUME_RATIO=1.0
+VOLC_TTS_PITCH_RATIO=1.0
+```
+
+如果使用 OpenAI 兼容的语音服务，则配置：
+
+```env
+TTS_PROVIDER=openai
+TTS_API_KEY=你的 TTS API Key
+TTS_MODEL=tts-1
+TTS_VOICE=alloy
+TTS_RESPONSE_FORMAT=mp3
+```
+
+前端只会请求“当前题目 / 追问”的语音，不会朗读完整长反馈；真正合成前还会去掉
+“第 1/8 题”“追问”等界面标识，只朗读问题正文。
 
 自动化测试会固定使用本地 mock 兜底，避免真实模型输出导致测试不稳定。
 

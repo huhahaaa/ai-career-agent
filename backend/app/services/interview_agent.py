@@ -405,7 +405,7 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
             "is_followup": False,
             "followup_question": None,
             "score": None,
-            "feedback": "本轮题目已完成，可以结束面试生成报告。",
+            "feedback": "全部题目已完成，可以生成面试报告。",
             "dimension_scores": None,
             "next_question": None,
             "current_index": total,

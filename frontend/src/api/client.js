@@ -399,6 +399,21 @@ export function endInterview(interviewId) {
   );
 }
 
+export function synthesizeSpeech(text) {
+  return mockFallback(
+    () => request('/speech/tts', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+    () => ({
+      available: false,
+      text,
+      provider: 'browser',
+      fallback_reason: 'mock mode uses browser speech synthesis',
+    }),
+  );
+}
+
 export function getInterviewHistory() {
   return mockFallback(() => request('/interviews/history'), () => []);
 }

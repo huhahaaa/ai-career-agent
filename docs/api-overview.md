@@ -92,6 +92,7 @@ Authorization: Bearer <access_token>
 | `POST` | `/interviews/{session_id}/finish` | 结束面试并生成 STAR 报告和练习计划，需登录 |
 | `GET` | `/interviews/history` | 当前用户面试记录，需登录 |
 | `GET` | `/interviews/{session_id}/report` | 面试报告详情，需登录 |
+| `POST` | `/speech/tts` | 为面试官当前题目或追问生成语音，需登录；未配置服务端 TTS 时返回浏览器兜底提示 |
 
 当前面试接口会保存简历快照、面试会话、Agent 状态、用户回答、评分、反馈、
 追问和下一轮问题。`/finish` 会生成综合得分、分项平均分、STAR 改写建议、
@@ -107,6 +108,17 @@ Authorization: Bearer <access_token>
 6. STAR 反馈：生成表达优化建议和练习计划。
 
 面试启动、回答评分和报告生成会写入 `agent_logs` 表。
+
+面试页的语音输出先调用 `/speech/tts`。该接口会裁剪文本，只保留当前题目
+或追问正文，并去掉“第 1/8 题”“追问”等界面标识，避免把长反馈全部朗读导致
+等待时间和费用上升。若未配置外部 TTS，前端自动回退到浏览器 `speechSynthesis`。
+
+服务端 TTS 当前支持：
+
+- `browser`：不生成服务端音频，前端使用浏览器本机朗读；
+- `edge`：使用 `edge-tts`，适合本地演示兜底；
+- `volcengine` / `doubao`：使用豆包/火山引擎语音合成 2.0 HTTP 接口，配置 `VOLC_TTS_API_KEY`、`VOLC_TTS_RESOURCE_ID` 和 `VOLC_TTS_VOICE_TYPE`；
+- `openai` / `openai-compatible`：使用 OpenAI 兼容语音接口。
 
 ## 数据看板与 Agent 日志
 
