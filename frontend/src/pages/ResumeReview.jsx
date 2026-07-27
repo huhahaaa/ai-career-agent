@@ -17,6 +17,7 @@ import {
   getResumeDetail,
   getResumes,
 } from '../api/client';
+import FlowGuide, { CAREER_FLOW_STEPS } from '../components/FlowGuide';
 
 function formatTime(value) {
   if (!value) return '-';
@@ -576,6 +577,12 @@ export default function ResumeReview() {
           )}
         </>
       )}
+
+      <FlowGuide
+        steps={CAREER_FLOW_STEPS}
+        current={1}
+        completed={1}
+      />
     </div>
   );
 }

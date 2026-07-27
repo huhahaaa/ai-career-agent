@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getResumeDetail, getResumes, runMatching } from '../api/client';
+import FlowGuide, { CAREER_FLOW_STEPS } from '../components/FlowGuide';
 
 function buildMatchSearchText(item) {
   const values = [
@@ -344,6 +345,12 @@ export default function JobSearchMatch() {
           </div>
         </div>
       )}
+
+      <FlowGuide
+        steps={CAREER_FLOW_STEPS}
+        current={2}
+        completed={2}
+      />
     </div>
   );
 }

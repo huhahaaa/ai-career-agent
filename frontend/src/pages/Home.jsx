@@ -13,6 +13,7 @@ import {
   Sparkles,
   Target,
 } from 'lucide-react';
+import FlowGuide, { CAREER_FLOW_STEPS } from '../components/FlowGuide';
 import { useAuth } from '../contexts/AuthContext';
 
 const BASE_FEATURES = [
@@ -29,14 +30,6 @@ const BASE_FEATURES = [
 
 const REVIEWER_FEATURE = { path: '/jobs/review', icon: Search, title: '岗位审核', desc: '审核岗位数据质量，维护岗位库内容。' };
 
-const STEPS = [
-  { icon: FileText, title: '上传简历', desc: '建立个人能力画像' },
-  { icon: CheckSquare, title: '简历审核', desc: 'AI 诊断优化建议' },
-  { icon: Target, title: '岗位匹配', desc: '锁定高匹配岗位' },
-  { icon: Mic, title: '模拟面试', desc: '实战演练与评分' },
-  { icon: GraduationCap, title: '训练提升', desc: '按计划定向补强' },
-];
-
 export default function Home() {
   const { user } = useAuth();
   const features = user?.role === 'reviewer' ? [REVIEWER_FEATURE, ...BASE_FEATURES] : BASE_FEATURES;
@@ -48,7 +41,7 @@ export default function Home() {
       <section className="hero">
         <div className="hero-content">
           <span className="hero-badge"><Sparkles size={14} /> AI 驱动的求职训练平台</span>
-          <h2>{greeting}，{user?.username || '同学'}<br />欢迎使用 AI 面试陪练</h2>
+          <h2>{greeting}，{user?.username || '同学'}<br />欢迎使用 智职通</h2>
           <p>
             从简历诊断、岗位匹配到模拟面试，一站式提升求职竞争力。
             每一次练习，都让你离心仪的 Offer 更近一步。
@@ -75,16 +68,10 @@ export default function Home() {
       </div>
 
       <h3 className="home-section-title"><Target size={18} /> 推荐流程</h3>
-      <div className="steps-flow">
-        {STEPS.map((s, i) => (
-          <div key={s.title} className="step-item">
-            <span className="step-index">STEP {i + 1}</span>
-            <span className="step-icon"><s.icon size={20} /></span>
-            <h4>{s.title}</h4>
-            <p>{s.desc}</p>
-          </div>
-        ))}
-      </div>
+      <FlowGuide
+        steps={CAREER_FLOW_STEPS}
+        message="建议先从简历上传开始，建立个人画像后再进入审核、岗位匹配和模拟面试。"
+      />
     </div>
   );
 }

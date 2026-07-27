@@ -30,6 +30,8 @@ class InterviewAnswerResult(BaseModel):
     followup_question: Optional[str] = None
     score: Optional[int] = None
     feedback: Optional[str] = None
+    quality_label: Optional[str] = None
+    quality_feedback: Optional[str] = None
     strengths: Optional[str] = None
     issues: Optional[str] = None
     improvement_suggestions: Optional[str] = None

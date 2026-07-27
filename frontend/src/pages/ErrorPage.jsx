@@ -56,8 +56,10 @@ export function AgentErrorPage() {
       <h2>⚠️ Agent运行异常</h2>
       <div className="card">
         <div className="error-detail">
-          <div className="error-detail-icon">🤖</div>
-          <h3>AI Agent 运行失败</h3>
+          <div className="error-detail-icon">
+            <img className="error-logo" src="/logo.png" alt="智职通" />
+          </div>
+          <h3>服务运行异常</h3>
           <p>模拟面试Agent（run_dev.sh）在执行过程中遇到异常，目前面试流程暂时中断。</p>
           <div className="error-info-box">
             <h4>可能原因</h4>

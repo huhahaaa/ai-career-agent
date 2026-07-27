@@ -200,3 +200,40 @@ def test_interview_agent_can_follow_up_before_scoring(client):
     assert score_response.status_code == 200
     assert score_response.json()["data"]["is_followup"] is False
     assert score_response.json()["data"]["score"] >= 70
+
+
+def test_interview_terminates_after_second_invalid_answer(client, session_factory):
+    headers = register_and_login(client)
+    start_response = client.post(
+        "/api/v1/interviews/start",
+        headers=headers,
+        json={
+            "resume_text": "Python FastAPI SQL 项目经验，负责后端接口开发和数据库设计。",
+            "target_position": "Python 后端实习生",
+        },
+    )
+    session_id = start_response.json()["data"]["session_id"]
+
+    warning_response = client.post(
+        "/api/v1/interviews/%s/answer" % session_id,
+        headers=headers,
+        json={"answer": "阿巴阿巴阿巴"},
+    )
+    termination_response = client.post(
+        "/api/v1/interviews/%s/answer" % session_id,
+        headers=headers,
+        json={"answer": "喜欢喜欢喜欢"},
+    )
+
+    assert warning_response.status_code == 200
+    assert warning_response.json()["data"]["session_status"] == "in_progress"
+    assert warning_response.json()["data"]["next_question"]
+    assert termination_response.status_code == 200
+    assert termination_response.json()["data"]["session_status"] == "terminated"
+    assert termination_response.json()["data"]["score"] is None
+    assert "不会生成面试报告" in termination_response.json()["data"]["feedback"]
+
+    with session_factory() as db:
+        session = db.get(InterviewSession, int(session_id))
+        assert session.status == "failed"
+        assert session.current_question == ""

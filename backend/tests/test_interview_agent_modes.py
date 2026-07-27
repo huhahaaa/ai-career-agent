@@ -84,6 +84,65 @@ def test_followup_points_out_missing_question_requirements():
     assert "价值" in result["feedback"]
 
 
+def test_first_nonsense_answer_warns_and_moves_to_next_question(monkeypatch):
+    monkeypatch.setattr(agent, "_llm_enabled", lambda: False)
+    state = start_interview(
+        resume_text="熟悉 Python、FastAPI、SQLAlchemy 和 pytest。",
+        target_position="Python 后端实习生",
+        interview_mode="技术面",
+    )["agent_state"]
+
+    result = evaluate_answer(state, "阿巴阿巴阿巴")
+
+    assert result["is_followup"] is False
+    assert result["score"] is None
+    assert result["quality_label"] == "nonsense"
+    assert result["session_status"] == "in_progress"
+    assert result["next_question"] == state["questions"][1]
+    assert state["invalid_answer_count"] == 1
+    assert state["current_index"] == 1
+    assert "first_answer" not in state["answers"][0]
+
+
+def test_second_nonsense_answer_terminates_interview(monkeypatch):
+    monkeypatch.setattr(agent, "_llm_enabled", lambda: False)
+    state = start_interview(
+        resume_text="熟悉 Python、FastAPI、SQLAlchemy 和 pytest。",
+        target_position="Python 后端实习生",
+        interview_mode="技术面",
+    )["agent_state"]
+
+    evaluate_answer(state, "阿巴阿巴阿巴")
+    result = evaluate_answer(state, "喜欢喜欢喜欢")
+
+    assert result["is_followup"] is False
+    assert result["score"] is None
+    assert result["quality_label"] == "nonsense"
+    assert result["session_status"] == "terminated"
+    assert result["next_question"] is None
+    assert state["invalid_answer_count"] == 2
+    assert state["status"] == "terminated"
+    assert "不会生成面试报告" in result["feedback"]
+
+
+def test_related_but_short_answer_still_triggers_followup(monkeypatch):
+    monkeypatch.setattr(agent, "_llm_enabled", lambda: False)
+    state = start_interview(
+        resume_text="熟悉 Python、FastAPI、SQLAlchemy 和 pytest。",
+        target_position="Python 后端实习生",
+        interview_mode="技术面",
+    )["agent_state"]
+
+    result = evaluate_answer(state, "我负责 FastAPI 接口开发。")
+
+    assert result["is_followup"] is True
+    assert result["score"] is None
+    assert result["quality_label"] == "weak"
+    assert result["followup_question"]
+    assert state["current_index"] == 0
+    assert state["answers"][0]["first_answer"]
+
+
 def test_missing_question_requirements_reduce_relevance_score(monkeypatch):
     monkeypatch.setattr(agent, "_llm_enabled", lambda: False)
     question = (

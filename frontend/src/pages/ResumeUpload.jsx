@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Star, Trash2 } from 'lucide-react';
 import { getResumes, uploadResume, deleteResume, setDefaultResume } from '../api/client';
+import FlowGuide, { CAREER_FLOW_STEPS } from '../components/FlowGuide';
 
 export default function ResumeUpload() {
   const [resumes, setResumes] = useState([]);
@@ -107,6 +108,12 @@ export default function ResumeUpload() {
           </label>
         </div>
       </div>
+
+      <FlowGuide
+        steps={CAREER_FLOW_STEPS}
+        current={0}
+        completed={resumes.length > 0 ? 0 : -1}
+      />
 
       <div className="card">
         <h3>📑 简历版本列表</h3>

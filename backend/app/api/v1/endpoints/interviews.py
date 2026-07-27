@@ -167,10 +167,14 @@ def answer(
         log_context["response_summary"] = {
             "is_followup": result.get("is_followup"),
             "score": result.get("score"),
+            "quality_label": result.get("quality_label"),
             "session_status": result.get("session_status"),
             "current_index": result.get("current_index"),
         }
     state = result["agent_state"]
+    quality_label = result.get("quality_label")
+    remind_answer = quality_label in {"nonsense", "off_topic"}
+    session_status = result.get("session_status")
 
     db.add(
         InterviewMessage(
@@ -182,9 +186,23 @@ def answer(
         )
     )
 
-    assistant_message = (
-        result["followup_question"] if result["is_followup"] else result["next_question"]
-    )
+    assistant_message = None
+    if result["is_followup"]:
+        assistant_message = result["followup_question"]
+    elif remind_answer and session_status == "terminated":
+        assistant_message = result["quality_feedback"] or result["feedback"]
+    elif remind_answer:
+        assistant_message = result["quality_feedback"] or result["feedback"]
+        if result.get("next_question"):
+            assistant_message = "%s\n\n第 %s/%s 题：%s" % (
+                assistant_message,
+                int(result.get("current_index", 0)) + 1,
+                result.get("total_questions", 8),
+                result["next_question"],
+            )
+    else:
+        assistant_message = result["next_question"]
+
     if assistant_message:
         db.add(
             InterviewMessage(
@@ -194,7 +212,14 @@ def answer(
             )
         )
 
-    interview_session.current_question = assistant_message or ""
+    if session_status == "terminated":
+        interview_session.status = "failed"
+        interview_session.current_question = ""
+        interview_session.feedback = result["feedback"] or ""
+    elif result["is_followup"]:
+        interview_session.current_question = result["followup_question"] or ""
+    else:
+        interview_session.current_question = result["next_question"] or ""
     if result["score"] is not None:
         interview_session.score = average_score_from_state(state)
         interview_session.feedback = result["feedback"] or ""

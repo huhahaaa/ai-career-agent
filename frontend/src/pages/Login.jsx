@@ -38,8 +38,13 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-header">
-          <h1>🤖 AI面试陪练</h1>
-          <p>智能面试模拟，助力职业发展</p>
+          <img
+            className="auth-logo"
+            src="/logo.png"
+            alt="智职通"
+          />
+          <h1>智职通</h1>
+          <p>AI 求职助手，智能规划职业未来</p>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
           <h2>用户登录</h2>
@@ -70,6 +75,7 @@ export default function Login() {
           <p className="auth-footer">
             还没有账号？<Link to="/register">立即注册</Link>
           </p>
+          <p className="auth-hint">测试账号：reviewer / reviewer123（审核员）</p>
           {import.meta.env.VITE_USE_MOCK === 'true' && <p className="auth-hint">演示账号: demo / demo123</p>}
         </form>
       </div>

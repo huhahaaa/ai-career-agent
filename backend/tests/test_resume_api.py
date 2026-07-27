@@ -1,4 +1,5 @@
 from io import BytesIO
+import zipfile
 
 from docx import Document
 from pypdf import PdfWriter
@@ -37,6 +38,28 @@ def build_blank_pdf_bytes() -> bytes:
     writer = PdfWriter()
     writer.add_blank_page(width=200, height=200)
     writer.write(buffer)
+    return buffer.getvalue()
+
+
+def build_broken_docx_bytes() -> bytes:
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, mode="w") as archive:
+        archive.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/theme/theme/themeManager.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.themeManager+xml"/>'
+            "</Types>",
+        )
+        archive.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>',
+        )
+        archive.writestr("theme/theme/themeManager.xml", "<themeManager />")
     return buffer.getvalue()
 
 
@@ -141,6 +164,24 @@ def test_docx_upload_extracts_text_and_resume_versions_can_be_compared(client):
     assert compare.status_code == 200
     assert "Docker" in compare.json()["data"]["added_skills"]
     assert compare.json()["data"]["score_delta"] > 0
+
+
+def test_broken_docx_upload_is_rejected(client):
+    headers = register_and_login(client)
+    upload = client.post(
+        "/api/v1/resumes/upload",
+        headers=headers,
+        files={
+            "file": (
+                "broken.docx",
+                build_broken_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+
+    assert upload.status_code == 422
+    assert "简历解析异常" in upload.json()["message"]
 
 
 def test_resume_compare_without_target_does_not_assume_backend_role(client):

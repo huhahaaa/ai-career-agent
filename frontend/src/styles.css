@@ -187,6 +187,11 @@ body.interview-immersive-active .main-content > .interview-page {
   color: var(--primary);
   flex-shrink: 0;
 }
+.brand-mark img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
 .user-info {
   display: inline-flex;
   align-items: center;
@@ -617,10 +622,22 @@ body.interview-immersive-active .main-content > .interview-page {
   padding: 20px;
 }
 .auth-card {
-  background: var(--bg-card); border-radius: 8px; padding: 40px;
-  width: 100%; max-width: 440px; box-shadow: var(--shadow-lg);
-}
+    background: var(--bg-card); border-radius: 8px; padding: 40px;
+    width: 100%; max-width: 440px; box-shadow: var(--shadow-lg);
+  }
 .auth-header { text-align: center; margin-bottom: 32px; }
+.auth-logo {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 16px;
+}
+.error-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
 .auth-header h1 { font-size: 1.75rem; font-weight: 700; color: var(--primary); margin-bottom: 8px; }
 .auth-header p { color: var(--text-secondary); font-size: .9rem; }
 .auth-form h2 { font-size: 1.2rem; margin-bottom: 20px; }
@@ -1343,6 +1360,66 @@ body.interview-immersive-active .interview-live-coach p {
   line-height: 1.6;
   min-height: 66px;
 }
+.camera-live-coach {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+.camera-live-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.camera-live-row strong {
+  flex-shrink: 0;
+  font-size: .84rem;
+}
+.camera-live-row span {
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: .82rem;
+  line-height: 1.5;
+  text-align: right;
+}
+.speech-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.speech-analysis-grid span {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: .78rem;
+  line-height: 1.4;
+}
+.speech-transcript-preview {
+  min-height: 38px;
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: .82rem;
+  line-height: 1.55;
+}
+.camera-live-coach p {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: .82rem;
+  line-height: 1.55;
+}
 .camera-preview {
   position: relative;
   height: clamp(180px, 24vw, 300px);
@@ -1542,6 +1619,13 @@ body.interview-immersive-active .interview-live-coach p {
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
+}
+.interview-terminated-panel {
+  border-color: color-mix(in srgb, var(--error) 32%, transparent);
+  background: var(--error-bg);
+}
+.interview-terminated-panel strong {
+  color: var(--error);
 }
 .voice-input-button {
   display: inline-flex;
@@ -2320,6 +2404,13 @@ body.interview-immersive-active .interview-live-coach p {
     grid-row: auto;
   }
   .speech-inline-panel { grid-template-columns: 1fr; }
+  .speech-analysis-grid { grid-template-columns: 1fr; }
+  .camera-live-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .camera-live-row span { text-align: left; }
   .review-card-header,
   .match-header,
   .resume-header { flex-direction: column; align-items: flex-start; }
@@ -2430,6 +2521,114 @@ a.feature-card:hover {
 .step-item h4 { font-size: .92rem; font-weight: 650; margin-bottom: 4px; }
 .step-item p { font-size: .78rem; color: var(--text-muted); }
 
+.flow-guide {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+}
+.flow-guide-progress {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.flow-guide-progress::before {
+  content: '';
+  position: absolute;
+  top: 17px;
+  left: 10%;
+  right: 10%;
+  height: 2px;
+  background: var(--border);
+}
+.flow-guide-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: .82rem;
+  text-align: center;
+}
+.flow-guide-dot svg,
+.flow-guide-dot .dot-num {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-weight: 700;
+  transition: var(--transition);
+}
+.flow-guide-dot.done svg,
+.flow-guide-dot.done .dot-num {
+  border-color: var(--success);
+  background: var(--success-bg);
+  color: var(--success);
+}
+.flow-guide-dot.active svg,
+.flow-guide-dot.active .dot-num {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+  box-shadow: 0 0 0 4px var(--focus-ring);
+}
+.dot-label {
+  max-width: 90px;
+  line-height: 1.35;
+}
+.flow-guide-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+.flow-guide-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: .92rem;
+  line-height: 1.5;
+}
+.flow-guide-text svg { color: var(--primary); flex-shrink: 0; }
+.flow-guide-btn {
+  min-width: 160px;
+  justify-content: space-between;
+  gap: 12px;
+}
+.flow-guide-btn-label {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  line-height: 1.25;
+}
+.flow-guide-btn-desc {
+  color: var(--on-primary);
+  opacity: .76;
+  font-size: .75rem;
+  font-weight: 500;
+}
+.flow-guide-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--success);
+  font-weight: 700;
+}
+
 @media (max-width: 768px) {
   .hero { padding: 40px 24px; }
   .hero h2 { font-size: 1.6rem; }
@@ -2440,4 +2639,23 @@ a.feature-card:hover {
   .hero h2 { font-size: 1.35rem; }
   .hero-actions .btn { width: 100%; }
   .step-item { min-width: calc(50% - 6px); }
+  .flow-guide { gap: 14px; padding: 16px; }
+  .flow-guide-progress {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .flow-guide-progress::before {
+    left: 18px;
+    right: 18px;
+  }
+  .flow-guide-dot {
+    min-width: 60px;
+  }
+  .flow-guide-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .flow-guide-btn { width: 100%; min-width: 0; }
 }

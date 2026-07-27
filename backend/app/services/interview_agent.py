@@ -204,6 +204,184 @@ def _contains_quantifier(text: str) -> bool:
     return bool(re.search(r"\d+|百分之|提升|降低|减少|增加", text))
 
 
+# 面试回答质量标签，用于区分无效输入、跑题、弱回答和可评分回答。
+QUALITY_LABELS = frozenset({"nonsense", "off_topic", "weak", "relevant"})
+INVALID_ANSWER_LABELS = frozenset({"nonsense", "off_topic"})
+MAX_INVALID_ANSWER_WARNINGS = 1
+
+
+def _question_signal_fragments(question: str) -> List[str]:
+    fragments: List[str] = []
+    seen = set()
+    for token in re.findall(r"[A-Za-z0-9]+|[\u4e00-\u9fff]{2,}", question or ""):
+        lowered = token.lower()
+        candidates = [lowered]
+        if len(token) > 3 and not re.search(r"[A-Za-z0-9]", token):
+            for size in (3, 2):
+                for index in range(len(token) - size + 1):
+                    candidates.append(token[index : index + size])
+        for candidate in candidates:
+            if len(candidate) < 2 or candidate in seen:
+                continue
+            seen.add(candidate)
+            fragments.append(candidate)
+    return fragments[:24]
+
+
+def _looks_like_nonsense(answer: str) -> bool:
+    stripped = re.sub(r"\s+", "", _strip_markdown(answer or ""))
+    if not stripped or len(stripped) < 3:
+        return True
+    if stripped in {"不知道", "不清楚", "没想好", "随便", "阿巴阿巴", "嗯", "嗯嗯", "啊", "哈哈哈"}:
+        return True
+    if not re.search(r"[\u4e00-\u9fffA-Za-z0-9]", stripped):
+        return True
+    if re.fullmatch(r"(.)\1{2,}", stripped):
+        return True
+    for size in (2, 3):
+        if len(stripped) >= size * 3 and len(stripped) % size == 0:
+            chunk = stripped[:size]
+            if chunk * (len(stripped) // size) == stripped:
+                return True
+    if len(re.findall(r"[\u4e00-\u9fffA-Za-z0-9]", stripped)) <= 2:
+        return True
+    return False
+
+
+def _normalize_quality_label(value: Any, fallback: str = "weak") -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "无效": "nonsense",
+        "乱答": "nonsense",
+        "胡言乱语": "nonsense",
+        "跑题": "off_topic",
+        "离题": "off_topic",
+        "相关但很弱": "weak",
+        "较弱": "weak",
+        "弱": "weak",
+        "切题": "relevant",
+        "相关": "relevant",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in QUALITY_LABELS else fallback
+
+
+def _normalize_quality_action(value: Any, fallback: str) -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "提醒": "remind",
+        "提醒重答": "remind",
+        "追问": "followup",
+        "评分": "score",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in {"remind", "followup", "score"}:
+        return normalized
+    return fallback
+
+
+def _rule_based_answer_quality(question: str, answer: str) -> Dict[str, str]:
+    cleaned = _strip_markdown(answer or "").strip()
+    if _looks_like_nonsense(cleaned):
+        return {
+            "quality_label": "nonsense",
+            "quality_feedback": "当前回答像是无效输入，请重新围绕题目作答，不要只写重复词或无意义内容。",
+            "quality_action": "remind",
+        }
+
+    question_fragments = _question_signal_fragments(question)
+    related_to_question = any(fragment and fragment.lower() in cleaned.lower() for fragment in question_fragments)
+    missing_requirements = _missing_question_requirements(question, cleaned) if question else []
+    has_tech_keywords = _contains_tech_keywords(cleaned)
+    text_length = len(cleaned)
+
+    if missing_requirements:
+        missing_text = "；".join(missing_requirements)
+        if not related_to_question and not has_tech_keywords and text_length < 24:
+            return {
+                "quality_label": "weak",
+                "quality_feedback": "回答偏简略，还没有展开到题目关注的核心内容。",
+                "quality_action": "followup",
+            }
+        return {
+            "quality_label": "weak",
+            "quality_feedback": f"回答只覆盖了部分要点，建议补充：{missing_text}。",
+            "quality_action": "followup",
+        }
+
+    if not related_to_question and not has_tech_keywords and text_length < 24:
+        return {
+            "quality_label": "weak",
+            "quality_feedback": "回答偏简略，可以补充具体经历、动作和结果。",
+            "quality_action": "followup",
+        }
+
+    if text_length < 40:
+        return {
+            "quality_label": "weak",
+            "quality_feedback": "回答偏简略，可以补充具体技术动作、结果和影响。",
+            "quality_action": "followup",
+        }
+
+    return {
+        "quality_label": "relevant",
+        "quality_feedback": "回答基本切题，可以继续评分。",
+        "quality_action": "score",
+    }
+
+
+def _classify_answer_quality(question: str, answer: str, target_position: str = "") -> Dict[str, str]:
+    rule_result = _rule_based_answer_quality(question, answer)
+    if rule_result["quality_label"] == "nonsense" or not _llm_enabled():
+        return rule_result
+
+    prompt = f"""请判断候选人回答的质量，只输出 JSON，不要输出 Markdown。
+
+面试问题：{question}
+候选人回答：{answer}
+目标岗位：{target_position}
+
+请从以下 4 个标签中选择一个：
+- nonsense：明显无效输入、重复词、胡言乱语
+- off_topic：没有回答题目核心，跑题了
+- weak：大体相关，但太短、太泛、缺少细节
+- relevant：相关且可以正常评分
+
+请输出：
+{{
+  "quality_label": "nonsense|off_topic|weak|relevant",
+  "quality_feedback": "一句话说明原因",
+  "quality_action": "remind|followup|score"
+}}
+"""
+    result = _safe_call_llm(
+        system_prompt="你是面试回答质量判断器，只输出 JSON，不要输出 Markdown。",
+        user_prompt=prompt,
+        fallback=json.dumps(rule_result, ensure_ascii=False),
+        temperature=0.2,
+        max_tokens=256,
+    )
+    parsed = _parse_json_fallback(result)
+    if not isinstance(parsed, dict):
+        return rule_result
+
+    label = _normalize_quality_label(parsed.get("quality_label"), fallback=rule_result["quality_label"])
+    feedback = _strip_markdown(str(parsed.get("quality_feedback") or rule_result["quality_feedback"]))[:160]
+    action_fallback = {
+        "nonsense": "remind",
+        "off_topic": "remind",
+        "weak": "followup",
+        "relevant": "score",
+    }.get(label, "followup")
+    parsed_action = _normalize_quality_action(parsed.get("quality_action"), fallback=action_fallback)
+    action = parsed_action if parsed_action == action_fallback else action_fallback
+    return {
+        "quality_label": label,
+        "quality_feedback": feedback,
+        "quality_action": action,
+    }
+
+
 # 空泛表达与夸大/绝对化表达词表，用于识别回答中的表达风险（需求 #15）。
 VAGUE_PHRASES = [
     "一些", "比较好", "差不多", "还可以", "很多", "一定程度", "相关经验",
@@ -321,16 +499,30 @@ def _join_feedback(existing: Any, extra: str, limit: int) -> str:
 
 
 def should_followup(answer: str, question: str = "") -> bool:
-    stripped = answer.strip()
-    if question and _missing_question_requirements(question, stripped):
-        return True
-    if len(stripped) < 50:
-        return True
-    if not _contains_tech_keywords(stripped):
-        return True
-    if "负责" in stripped and not _contains_quantifier(stripped):
-        return True
-    return False
+    quality = _rule_based_answer_quality(question, answer)
+    return quality["quality_label"] == "weak"
+
+
+def _invalid_answer_feedbacks(interview_mode: str) -> tuple[str, str]:
+    copies = {
+        "HR面": (
+            "警告：这个回答有点没接住题目，我先提醒你一次。请尽量围绕经历、动机和协作来答，不然我只能继续往下问了。",
+            "终止面试：很遗憾，这一轮先到这里。你连续两次都没有正面回应问题，请先离开，整理好之后再来。本场不会生成面试报告。",
+        ),
+        "技术面": (
+            "警告：这个回答还是有点偏题，我先提醒一次。请直接说技术方案、关键动作和结果，不然我会继续追问。",
+            "终止面试：抱歉，这一轮面试我先停在这里。你连续两次都没有对上问题核心，请先离开，准备好再来。本场不会生成面试报告。",
+        ),
+        "压力面": (
+            "警告：别绕了，这个回答还是没打到点上，我先提醒你一次。请直接回应问题核心。",
+            "终止面试：这轮到这儿就可以了。你连续两次都没有正面作答，我不会继续追了，请先离开。本场不会生成面试报告。",
+        ),
+        "反馈教练": (
+            "警告：这题还没答到重点，我先提醒你一次。请把核心经历和具体做法说清楚，我才好继续帮你。",
+            "终止面试：这轮先到这里吧。你连续两次都没把重点说清楚，先离开整理一下，再来一次。本场不会生成面试报告。",
+        ),
+    }
+    return copies.get(interview_mode, copies["技术面"])
 
 
 def start_interview(
@@ -393,6 +585,70 @@ def start_interview(
     }
 
 
+def _quality_warning_or_termination_response(
+    state: Dict[str, Any],
+    idx: int,
+    quality_info: Dict[str, str],
+) -> Dict[str, Any]:
+    total = len(state["questions"])
+    invalid_count = int(state.get("invalid_answer_count", 0) or 0) + 1
+    state["invalid_answer_count"] = invalid_count
+    state["answers"][idx]["invalid_quality_label"] = quality_info.get("quality_label")
+    warning_feedback, termination_feedback = _invalid_answer_feedbacks(
+        state.get("interview_mode", DEFAULT_INTERVIEW_MODE)
+    )
+
+    if invalid_count > MAX_INVALID_ANSWER_WARNINGS:
+        feedback = termination_feedback
+        state["status"] = "terminated"
+        state["termination_reason"] = feedback
+        return {
+            "is_followup": False,
+            "followup_question": None,
+            "score": None,
+            "feedback": feedback,
+            "quality_label": quality_info.get("quality_label"),
+            "quality_feedback": feedback,
+            "dimension_scores": None,
+            "next_question": None,
+            "current_index": idx,
+            "total_questions": total,
+            "session_status": "terminated",
+            "strengths": "",
+            "issues": "",
+            "improvement_suggestions": "",
+            "agent_state": state,
+        }
+
+    feedback = warning_feedback
+    state["answers"][idx]["warning_feedback"] = quality_info.get("quality_feedback") or feedback
+    state["current_index"] = idx + 1
+    if state["current_index"] >= total:
+        state["status"] = "ready_to_finish"
+        next_question = None
+        session_status = "ready_to_finish"
+    else:
+        next_question = state["questions"][state["current_index"]]
+        session_status = "in_progress"
+    return {
+        "is_followup": False,
+        "followup_question": None,
+        "score": None,
+        "feedback": feedback,
+        "quality_label": quality_info.get("quality_label"),
+        "quality_feedback": feedback,
+        "dimension_scores": None,
+        "next_question": next_question,
+        "current_index": state["current_index"],
+        "total_questions": total,
+        "session_status": session_status,
+        "strengths": "",
+        "issues": "",
+        "improvement_suggestions": "",
+        "agent_state": state,
+    }
+
+
 def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any]:
     state = _ensure_state(session_state)
     questions = state["questions"]
@@ -420,15 +676,20 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
     slot = state["answers"][idx]
     first_answer = slot.get("first_answer")
     interview_mode = state.get("interview_mode", DEFAULT_INTERVIEW_MODE)
+    target_position = state.get("target_position", "")
 
     if not first_answer:
+        quality_info = _classify_answer_quality(questions[idx], answer, target_position)
+        if quality_info["quality_action"] == "remind":
+            return _quality_warning_or_termination_response(state, idx, quality_info)
+
         slot["first_answer"] = answer
         missing_requirements = _missing_question_requirements(questions[idx], answer)
-        if should_followup(answer, question=questions[idx]):
+        if quality_info["quality_action"] == "followup":
             followup = _generate_followup(
                 question=questions[idx],
                 answer=answer,
-                target_position=state.get("target_position", ""),
+                target_position=target_position,
                 interview_mode=interview_mode,
                 missing_requirements=missing_requirements,
             )
@@ -442,6 +703,8 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
                 "followup_question": followup,
                 "score": None,
                 "feedback": feedback,
+                "quality_label": quality_info.get("quality_label"),
+                "quality_feedback": quality_info.get("quality_feedback"),
                 "dimension_scores": None,
                 "next_question": followup,
                 "current_index": idx,
@@ -452,11 +715,16 @@ def evaluate_answer(session_state: Dict[str, Any], answer: str) -> Dict[str, Any
                 "improvement_suggestions": "",
                 "agent_state": state,
             }
-        return _score_and_advance(state, idx, answer)
+        return _score_and_advance(state, idx, answer, quality_info=quality_info)
+
+    followup_question = slot.get("followup_question") or questions[idx]
+    quality_info = _classify_answer_quality(followup_question, answer, target_position)
+    if quality_info["quality_action"] == "remind":
+        return _quality_warning_or_termination_response(state, idx, quality_info)
 
     slot["followup_answer"] = answer
     combined_answer = "第一轮回答：%s\n追问补充：%s" % (first_answer, answer)
-    return _score_and_advance(state, idx, combined_answer)
+    return _score_and_advance(state, idx, combined_answer, quality_info=quality_info)
 
 
 def finish_interview(
@@ -540,7 +808,12 @@ def _ensure_state(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 
-def _score_and_advance(state: Dict[str, Any], idx: int, answer_text: str) -> Dict[str, Any]:
+def _score_and_advance(
+    state: Dict[str, Any],
+    idx: int,
+    answer_text: str,
+    quality_info: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
     questions = state["questions"]
     total = len(questions)
     interview_mode = state.get("interview_mode", DEFAULT_INTERVIEW_MODE)
@@ -568,6 +841,8 @@ def _score_and_advance(state: Dict[str, Any], idx: int, answer_text: str) -> Dic
         "followup_question": None,
         "score": scores["total"],
         "feedback": scores.get("overall_comment", ""),
+        "quality_label": (quality_info or {}).get("quality_label"),
+        "quality_feedback": (quality_info or {}).get("quality_feedback"),
         "strengths": scores.get("strengths", ""),
         "issues": scores.get("issues", ""),
         "improvement_suggestions": scores.get("improvement_suggestions", ""),

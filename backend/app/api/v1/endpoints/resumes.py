@@ -34,6 +34,16 @@ router = APIRouter()
 ALLOWED_RESUME_SUFFIXES = SUPPORTED_SUFFIXES
 MAX_RESUME_BYTES = 5 * 1024 * 1024
 UPLOAD_ROOT = Path("data/uploads/resumes")
+SUSPICIOUS_BINARY_MARKERS = [
+    "Root Entry",
+    "WordDocument",
+    "[Content_Types].xml",
+    "_rels/.rels",
+    "theme/theme",
+    "PK\x03\x04",
+    "PNG",
+    "IHDR",
+]
 
 
 def _latest_report(resume: Resume) -> ResumeAuditReport | None:
@@ -95,12 +105,43 @@ def _resume_summary(resume: Resume) -> dict:
     }
 
 
+def _looks_like_unreadable_text(text: str) -> bool:
+    compact = "".join(char for char in text if not char.isspace())
+    if len(compact) < 10:
+        return False
+
+    question_ratio = compact.count("?") / len(compact)
+    if len(compact) >= 40 and question_ratio >= 0.15:
+        return True
+
+    if any(marker in text for marker in SUSPICIOUS_BINARY_MARKERS):
+        return True
+
+    meaningful = 0
+    for char in compact:
+        if "\u4e00" <= char <= "\u9fff" or char.isalnum():
+            meaningful += 1
+    meaningful_ratio = meaningful / len(compact)
+    return len(compact) >= 80 and meaningful_ratio < 0.45
+
+
+def _resume_parse_error() -> AppException:
+    return AppException(
+        422,
+        42207,
+        "简历解析异常，请重新上传 UTF-8 文本、PDF 或标准 DOCX 文件；"
+        "如果使用 WPS/Word，请先另存为标准 .docx 或导出 PDF。",
+    )
+
+
 def _decode_uploaded_text(content: bytes, filename: str) -> str:
     try:
         text, _parser = extract_resume_text(content, filename)
-        return text
     except Exception as exc:
-        raise AppException(422, 42207, "resume text extraction failed: %s" % exc) from exc
+        raise _resume_parse_error() from exc
+    if _looks_like_unreadable_text(text):
+        raise _resume_parse_error()
+    return text
 
 
 def _version_payload(version: ResumeVersion) -> dict:

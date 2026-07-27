@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
-  Bot,
   Briefcase,
   CheckSquare,
   ClipboardList,
@@ -84,8 +83,10 @@ export default function Layout() {
           >
             {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
           </button>
-          <div className="brand-mark"><Bot size={20} /></div>
-          <h1>AI 面试陪练</h1>
+          <div className="brand-mark">
+            <img src="/logo.png" alt="智职通" />
+          </div>
+          <h1>智职通</h1>
         </div>
         <div className="header-right">
           <button

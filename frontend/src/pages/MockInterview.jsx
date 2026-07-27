@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useBeforeUnload, useLocation } from 'react-router-dom';
+import { useBeforeUnload, useLocation, useNavigate } from 'react-router-dom';
 import { Camera, Mic, MicOff, VideoOff, Volume2, VolumeX } from 'lucide-react';
 import { endInterview, getResumeDetail, getResumes, sendMessage, startInterview, synthesizeSpeech } from '../api/client';
 import RadarChart from '../components/RadarChart';
@@ -37,15 +37,41 @@ function getSpeakableInterviewerText(text) {
   let cleaned = (text || '').trim();
   if (!cleaned) return '';
 
-  const followupMatch = cleaned.match(/追问[:：]\s*([\s\S]+)$/);
-  if (followupMatch) {
-    cleaned = followupMatch[1];
+  const warningLike = cleaned.startsWith('警告：') || cleaned.startsWith('警告:');
+  const terminationLike = cleaned.startsWith('终止面试：')
+    || cleaned.startsWith('终止面试:')
+    || cleaned.includes('本场面试已终止')
+    || cleaned.includes('不会生成面试报告');
+
+  if (warningLike || terminationLike) {
+    const segments = cleaned.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean);
+    const head = segments[0] || cleaned;
+    const tail = segments.slice(1).join(' ');
+    const warningPrefix = warningLike ? '警告，' : '终止面试，';
+    const headBody = head
+      .replace(/^警告[:：]\s*/, '')
+      .replace(/^终止面试[:：]\s*/, '')
+      .replace(/【[^】]+】/g, '')
+      .trim();
+    const tailBody = tail
+      ? tail
+          .replace(/^第\s*\d+\s*\/\s*\d+\s*题[:：]\s*/, '下一题，')
+          .replace(/^问题[:：]\s*/, '')
+          .replace(/【[^】]+】/g, '')
+          .trim()
+      : '';
+    cleaned = [warningPrefix + headBody, tailBody].filter(Boolean).join(' ');
   } else {
-    const questionMatches = [...cleaned.matchAll(/第\s*\d+\s*\/\s*\d+\s*题[:：]\s*([\s\S]+)$/g)];
-    if (questionMatches.length) {
-      cleaned = questionMatches[questionMatches.length - 1][1];
-    } else if (cleaned.includes('本轮题目已完成')) {
-      cleaned = '全部题目已完成，可以生成面试报告。';
+    const followupMatch = cleaned.match(/追问[:：]\s*([\s\S]+)$/);
+    if (followupMatch) {
+      cleaned = followupMatch[1];
+    } else {
+      const questionMatches = [...cleaned.matchAll(/第\s*\d+\s*\/\s*\d+\s*题[:：]\s*([\s\S]+)$/g)];
+      if (questionMatches.length) {
+        cleaned = questionMatches[questionMatches.length - 1][1];
+      } else if (cleaned.includes('本轮题目已完成')) {
+        cleaned = '全部题目已完成，可以生成面试报告。';
+      }
     }
   }
 
@@ -149,6 +175,7 @@ function FloatingInterviewer({ state, active }) {
 
 export default function MockInterview() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [resumeText, setResumeText] = useState(location.state?.resumeText || '');
   const [resumes, setResumes] = useState([]);
   const [selectedResumeId, setSelectedResumeId] = useState(location.state?.resumeId ? String(location.state.resumeId) : '');
@@ -162,6 +189,8 @@ export default function MockInterview() {
   const [feedback, setFeedback] = useState([]);
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState(false);
+  const [terminated, setTerminated] = useState(false);
+  const [terminationReason, setTerminationReason] = useState('');
   const [interviewReadyToReport, setInterviewReadyToReport] = useState(false);
   const [finalReport, setFinalReport] = useState(null);
   const [error, setError] = useState('');
@@ -209,7 +238,8 @@ export default function MockInterview() {
   const voiceAudioRef = useRef(null);
   const voiceRequestIdRef = useRef(0);
   const allowHistoryLeaveRef = useRef(false);
-  const interviewLocked = Boolean(sessionId && !ended);
+  const terminationRedirectTimerRef = useRef(null);
+  const interviewLocked = Boolean(sessionId && !ended && !terminated);
 
   useEffect(() => {
     document.body.classList.toggle('interview-immersive-active', interviewLocked);
@@ -256,6 +286,34 @@ export default function MockInterview() {
   useEffect(() => {
     messagesEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!terminated) {
+      if (terminationRedirectTimerRef.current) {
+        window.clearTimeout(terminationRedirectTimerRef.current);
+        terminationRedirectTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    stopSpeechRecognition();
+    stopCamera();
+
+    if (terminationRedirectTimerRef.current) {
+      window.clearTimeout(terminationRedirectTimerRef.current);
+    }
+    terminationRedirectTimerRef.current = window.setTimeout(() => {
+      terminationRedirectTimerRef.current = null;
+      navigate('/', { replace: true });
+    }, 5200);
+
+    return () => {
+      if (terminationRedirectTimerRef.current) {
+        window.clearTimeout(terminationRedirectTimerRef.current);
+        terminationRedirectTimerRef.current = null;
+      }
+    };
+  }, [terminated, navigate]);
 
   const stopVoiceOutput = () => {
     voiceRequestIdRef.current += 1;
@@ -394,6 +452,14 @@ export default function MockInterview() {
         caption: '本轮表现已整理成报告。',
       };
     }
+    if (terminated) {
+      return {
+        mode: 'terminated',
+        title: '面试已终止',
+        label: '强制结束',
+        caption: '本场不会生成报告，请重新开始一轮面试。',
+      };
+    }
     if (interviewReadyToReport) {
       return {
         mode: 'ready',
@@ -432,7 +498,7 @@ export default function MockInterview() {
       label: '在线',
       caption: '面试官会根据回答继续追问。',
     };
-  }, [busy, ended, interviewReadyToReport, listening, voiceOutputEnabled, voiceOutputStatus]);
+  }, [busy, ended, terminated, interviewReadyToReport, listening, voiceOutputEnabled, voiceOutputStatus]);
 
   const updateSpeechStats = () => {
     const startedAt = speechStartedAtRef.current;
@@ -867,6 +933,8 @@ export default function MockInterview() {
       setInterviewMode(result.interview_mode || interviewMode);
       setInterviewReadyToReport(false);
       setEnded(false);
+      setTerminated(false);
+      setTerminationReason('');
       setFinalReport(null);
       setScores([]);
       setFeedback([]);
@@ -886,7 +954,7 @@ export default function MockInterview() {
 
   const handleSend = async () => {
     const answer = input.trim();
-    if (!answer || busy || !sessionId || ended || interviewReadyToReport) return;
+    if (!answer || busy || !sessionId || ended || terminated || interviewReadyToReport) return;
 
     setMessages(current => [...current, { role: 'user', content: answer, timestamp: new Date().toISOString() }]);
     setInput('');
@@ -901,12 +969,24 @@ export default function MockInterview() {
         setFeedback(current => [...current, result.feedback]);
       }
 
-      const readyToReport = result.session_status === 'ready_to_finish' || (!result.is_followup && !result.next_question);
+      const terminatedByAgent = result.session_status === 'terminated';
+      const readyToReport = result.session_status === 'ready_to_finish';
       setInterviewReadyToReport(readyToReport);
+      if (terminatedByAgent) {
+        setTerminated(true);
+        setTerminationReason(result.feedback || result.quality_feedback || '终止面试：这一轮面试先到这里，请先离开，整理好之后再来。');
+        setInterviewReadyToReport(false);
+      }
 
+      const isReminderOnly = ['nonsense', 'off_topic'].includes(result.quality_label);
+      const feedbackText = result.feedback || result.quality_feedback || '';
       const responseText = result.is_followup
         ? `追问：${result.followup_question || result.next_question}`
-        : `${result.feedback || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n全部题目已完成，可以点击“生成报告”查看面试结果。'}`;
+        : terminatedByAgent
+          ? feedbackText || '终止面试：这一轮面试先到这里，请先离开，整理好之后再来。'
+        : isReminderOnly
+          ? `${feedbackText || '警告：这个回答有点偏题，请尽量围绕题目核心作答。'}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : ''}`
+          : `${feedbackText || ''}${result.next_question ? `\n\n第 ${(result.current_index || 0) + 1}/${result.total_questions || 8} 题：${result.next_question}` : '\n\n全部题目已完成，可以点击“生成报告”查看面试结果。'}`;
 
       setMessages(current => {
         const updated = [...current];
@@ -950,9 +1030,20 @@ export default function MockInterview() {
     setFeedback([]);
     setInput('');
     setEnded(false);
+    setTerminated(false);
+    setTerminationReason('');
     setInterviewReadyToReport(false);
     setFinalReport(null);
     setError('');
+  };
+
+  const handleReturnHome = (cancelVoice = false) => {
+    stopSpeechRecognition();
+    stopCamera();
+    if (cancelVoice) {
+      stopVoiceOutput();
+    }
+    navigate('/', { replace: true });
   };
 
   const handleGenerateReport = async () => {
@@ -1045,7 +1136,7 @@ export default function MockInterview() {
             {voiceOutputEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             {voiceOutputEnabled ? '朗读开启' : '朗读关闭'}
           </button>
-          {!ended && (
+          {!ended && !terminated && (
             <button
               className={interviewReadyToReport ? 'btn btn-primary' : 'btn btn-danger'}
               onClick={interviewReadyToReport ? handleGenerateReport : handleExitInterview}
@@ -1097,18 +1188,23 @@ export default function MockInterview() {
           <ul className="vision-advice">
             {visionAnalysis.advice.map((item, index) => <li key={index}>{item}</li>)}
           </ul>
-          </div>
 
-          <div className="interview-live-coach">
-            <div>
-              <strong>语音状态</strong>
-              <span>{listening ? speechStatus : '点击回答框旁的麦克风开始语音输入'}</span>
+          <div className="camera-live-coach">
+            <div className="camera-live-row">
+              <strong>实时语音检测</strong>
+              <span>{listening ? speechStatus : '点击回答框旁的麦克风开始检测'}</span>
             </div>
-            <div>
-              <strong>面试官语音</strong>
-              <span>{voiceOutputEnabled ? voiceOutputStatus : '已关闭'}</span>
+            <div className="speech-analysis-grid">
+              <span>语速：{speechStats.rate || '--'} 字/分钟</span>
+              <span>停顿：{speechStats.pauseCount} 次</span>
+              <span>最长停顿：{speechStats.longestPauseSeconds || 0}s</span>
+              <span>音量：{micLevel}%</span>
+            </div>
+            <div className="speech-transcript-preview">
+              {interimTranscript || (listening ? '正在识别语音，可继续说话' : '语音转写会同步到右侧回答框，提交前可手动修改')}
             </div>
             {speechCoachTip && <p>{speechCoachTip}</p>}
+          </div>
           </div>
         </section>
 
@@ -1157,7 +1253,7 @@ export default function MockInterview() {
           <div ref={messagesEnd} />
         </div>
 
-        {!ended && !interviewReadyToReport && (
+        {!ended && !terminated && !interviewReadyToReport && (
           <div className="chat-input-area">
             <button
               className={`voice-input-button ${listening ? 'active' : ''}`}
@@ -1186,7 +1282,7 @@ export default function MockInterview() {
             </div>
           </div>
         )}
-        {!ended && interviewReadyToReport && (
+        {!ended && !terminated && interviewReadyToReport && (
           <div className="interview-ready-panel">
             <strong>全部题目已完成</strong>
             <span>当前面试可以生成报告。生成报告前请不要刷新或离开页面。</span>
@@ -1195,9 +1291,26 @@ export default function MockInterview() {
             </button>
           </div>
         )}
+        {terminated && (
+          <div className="interview-ready-panel interview-terminated-panel">
+            <strong>本场面试已终止</strong>
+            <span>{terminationReason || '终止面试：这一轮面试先到这里，请先离开，整理好之后再来。'}</span>
+            <button className="btn btn-outline" type="button" onClick={() => handleReturnHome(true)}>
+              返回首页
+            </button>
+          </div>
+        )}
           </div>
         </section>
       </div>
+
+      {terminated && (
+        <div className="card interview-result">
+          <h3>面试已强制结束</h3>
+          <p>{terminationReason || '终止面试：这一轮面试先到这里，请先离开，整理好之后再来。'}</p>
+          <p className="text-muted">系统会自动返回首页，你也可以手动点击返回。</p>
+        </div>
+      )}
 
       {ended && (
         <div className="card interview-result">
@@ -1261,6 +1374,7 @@ export default function MockInterview() {
           )}
         </div>
       )}
+
     </div>
   );
 }

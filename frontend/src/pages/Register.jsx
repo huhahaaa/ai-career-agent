@@ -40,8 +40,13 @@ export default function Register() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-header">
-          <h1>🤖 AI面试陪练</h1>
-          <p>注册账号，开启智能面试之旅</p>
+          <img
+            className="auth-logo"
+            src="/logo.png"
+            alt="智职通"
+          />
+          <h1>智职通</h1>
+          <p>AI 求职助手，智能规划职业未来</p>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
           <h2>用户注册</h2>
