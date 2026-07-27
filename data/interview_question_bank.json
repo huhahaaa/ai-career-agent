@@ -1,0 +1,102 @@
+{
+  "meta": {
+    "total_questions": 30,
+    "position_bank_count": 6,
+    "modes": ["HR面", "技术面", "压力面", "反馈教练"],
+    "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"],
+    "categories": [
+      "行为素养", "技术基础", "项目经历", "技术深入", "压力情境", "自我认知", "职业发展", "综合反馈"
+    ],
+    "instruction": "面试题库按面试模式（HR面/技术面/压力面/反馈教练）与题型分类，并为每道题标注适用岗位。position_banks 提供前端/后端/产品/运营/算法/数媒六个岗位专属题库，用于按岗位生成不同题目。"
+  },
+  "questions": [
+    {"id": "q1", "mode": "HR面", "category": "行为素养", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "请用 2 分钟做一下自我介绍，并说明你为什么选择我们公司这个岗位。", "difficulty": "简单", "expected_focus": "结构清晰、动机真实、与岗位匹配"},
+    {"id": "q2", "mode": "HR面", "category": "行为素养", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你未来 3 到 5 年的职业规划是什么？", "difficulty": "简单", "expected_focus": "目标清晰、与岗位发展路径一致"},
+    {"id": "q3", "mode": "HR面", "category": "自我认知", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你最大的优点和缺点分别是什么？请举例说明。", "difficulty": "简单", "expected_focus": "有具体事例、缺点真实且可改进"},
+    {"id": "q4", "mode": "HR面", "category": "职业发展", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你期望的薪资范围是多少？你如何看待加班和团队协作？", "difficulty": "中等", "expected_focus": "表达客观、协作意识"},
+    {"id": "q5", "mode": "HR面", "category": "行为素养", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你为什么从上一家公司离职？", "difficulty": "中等", "expected_focus": "正向表达、不抱怨"},
+    {"id": "q6", "mode": "技术面", "category": "技术基础", "positions": ["前端", "后端", "算法"], "question": "请介绍一下你最熟悉的一门编程语言或技术栈，以及它的优缺点。", "difficulty": "简单", "expected_focus": "理解深入、优缺点平衡"},
+    {"id": "q7", "mode": "技术面", "category": "技术基础", "positions": ["前端", "后端", "数媒", "算法"], "question": "你在项目中是如何做版本控制和代码协作的？", "difficulty": "简单", "expected_focus": "Git 工作流、分支策略、Code Review"},
+    {"id": "q8", "mode": "技术面", "category": "项目经历", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "请介绍一个你最满意的项目，你在其中的角色和贡献是什么？", "difficulty": "中等", "expected_focus": "STAR 结构、量化贡献"},
+    {"id": "q9", "mode": "技术面", "category": "技术深入", "positions": ["前端", "后端", "算法", "数媒"], "question": "你在项目中遇到的最大技术挑战是什么？你是怎么解决的？", "difficulty": "中等", "expected_focus": "问题拆解、解决方案、复盘"},
+    {"id": "q10", "mode": "技术面", "category": "技术基础", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你如何看待人工智能对你们岗位的影响？", "difficulty": "中等", "expected_focus": "行业理解、自我提升意识"},
+    {"id": "q11", "mode": "技术面", "category": "技术深入", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你平时是如何学习新技术和提升自己的？", "difficulty": "简单", "expected_focus": "学习方法、持续性"},
+    {"id": "q12", "mode": "技术面", "category": "项目经历", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "请描述一次你和同事或导师意见不一致的经历，你是怎么处理的？", "difficulty": "中等", "expected_focus": "沟通、妥协、结果导向"},
+    {"id": "q13", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "如果这次面试你没有被录用，你认为最可能的原因是什么？", "difficulty": "困难", "expected_focus": "自我认知、抗压、改进意愿"},
+    {"id": "q14", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "算法", "数媒", "产品"], "question": "你的简历里这个项目看起来并不复杂，你觉得自己真的具备相应能力吗？", "difficulty": "困难", "expected_focus": "自信且有依据、用量化证明"},
+    {"id": "q15", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "数媒"], "question": "你之前的项目经验比较单薄，你怎么让我们相信你能胜任？", "difficulty": "困难", "expected_focus": "潜力、学习力、项目细节"},
+    {"id": "q16", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你说你很擅长沟通，但刚才的回答逻辑并不清晰，你怎么解释？", "difficulty": "困难", "expected_focus": "情绪稳定、逻辑重构"},
+    {"id": "q17", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "产品", "算法"], "question": "如果你和直属领导在技术选型上产生严重分歧，你会怎么做？", "difficulty": "困难", "expected_focus": "尊重、数据驱动、向上沟通"},
+    {"id": "q18", "mode": "压力面", "category": "自我认知", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你觉得自己相比同届候选人，最大的短板在哪里？", "difficulty": "困难", "expected_focus": "真实短板、改进计划"},
+    {"id": "q19", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "我们岗位节奏很快，你如何保证在高压下交付质量？", "difficulty": "困难", "expected_focus": "时间管理、质量保障手段"},
+    {"id": "q20", "mode": "反馈教练", "category": "综合反馈", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "刚才的回答里，哪一部分你觉得自己表达得最不清楚？", "difficulty": "中等", "expected_focus": "元认知、反思能力"},
+    {"id": "q21", "mode": "反馈教练", "category": "综合反馈", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "如果满分 10 分，你给刚才的回答打几分？为什么？", "difficulty": "中等", "expected_focus": "自我评估、依据充分"},
+    {"id": "q22", "mode": "反馈教练", "category": "综合反馈", "positions": ["前端", "后端", "算法", "数媒"], "question": "针对刚才的技术问题，你觉得还可以补充哪些细节？", "difficulty": "中等", "expected_focus": "深度、边界情况"},
+    {"id": "q23", "mode": "反馈教练", "category": "自我认知", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你觉得面试官刚才的追问，考查的是你哪方面能力？", "difficulty": "中等", "expected_focus": "洞察追问意图"},
+    {"id": "q24", "mode": "反馈教练", "category": "职业发展", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "结合今天的面试，你下一步最想提升的一项能力是什么？", "difficulty": "简单", "expected_focus": "成长型思维、可落地计划"},
+    {"id": "q25", "mode": "技术面", "category": "项目经历", "positions": ["前端", "后端", "算法", "数媒"], "question": "你如何保证你写的代码质量和可维护性？", "difficulty": "中等", "expected_focus": "测试、Review、规范、文档"},
+    {"id": "q26", "mode": "技术面", "category": "技术深入", "positions": ["后端", "算法", "前端"], "question": "你做过哪些性能优化或线上问题排查？", "difficulty": "困难", "expected_focus": "排查思路、量化收益"},
+    {"id": "q27", "mode": "技术面", "category": "行为素养", "positions": ["前端", "后端", "产品", "数媒"], "question": "你如何看待“快速交付”和“代码质量”之间的矛盾？", "difficulty": "中等", "expected_focus": "权衡、工程实践"},
+    {"id": "q28", "mode": "压力面", "category": "压力情境", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "你刚才的回答缺少具体数据，如果必须用量化结果证明价值你会怎么补？", "difficulty": "困难", "expected_focus": "量化意识、STAR 数据"},
+    {"id": "q29", "mode": "反馈教练", "category": "综合反馈", "positions": ["前端", "后端", "产品", "运营", "算法", "数媒"], "question": "如果让你重新回答刚才那个问题，你会怎么改进结构？", "difficulty": "中等", "expected_focus": "结构化表达、归纳"},
+    {"id": "q30", "mode": "技术面", "category": "技术基础", "positions": ["前端", "后端", "算法", "数媒"], "question": "你常用的调试方法和工具是什么？", "difficulty": "简单", "expected_focus": "工具链熟练度、排查流程"}
+  ],
+  "position_banks": {
+    "前端": [
+      {"mode": "HR面", "question": "你更偏向使用 Vue 还是 React？为什么？"},
+      {"mode": "技术面", "question": "请解释一下浏览器的重排（reflow）和重绘（repaint），以及如何减少它们。"},
+      {"mode": "技术面", "question": "你如何理解前端工程化？用过哪些构建工具（Vite / Webpack）？"},
+      {"mode": "技术面", "question": "说说你对响应式布局和移动端适配（rem / vw / 媒体查询）的理解。"},
+      {"mode": "技术面", "question": "如何优化首屏加载性能？你用过哪些手段（懒加载、代码分割）？"},
+      {"mode": "压力面", "question": "你的作品集项目看起来视觉效果不错，但工程化程度似乎不高，你怎么看？"},
+      {"mode": "反馈教练", "question": "刚才你讲组件设计比较笼统，能用一个你写过的组件举例说明状态管理吗？"},
+      {"mode": "反馈教练", "question": "如果要你从零搭建一个数媒作品展示网站，你会怎么组织技术选型？"}
+    ],
+    "后端": [
+      {"mode": "HR面", "question": "你更偏好 Java、Go 还是 Python 后端？为什么？"},
+      {"mode": "技术面", "question": "说说你对数据库索引的理解，什么情况下索引会失效？"},
+      {"mode": "技术面", "question": "如何设计一个高并发下的接口限流和幂等方案？"},
+      {"mode": "技术面", "question": "你如何做服务的异常处理和日志监控？"},
+      {"mode": "技术面", "question": "解释一下事务的 ACID 和隔离级别。"},
+      {"mode": "压力面", "question": "你说做过高并发项目，但简历里没有 QPS 数据，怎么证明？"},
+      {"mode": "反馈教练", "question": "刚才的缓存设计回答缺少失效策略，能补充吗？"},
+      {"mode": "反馈教练", "question": "设计一个简历解析服务的整体架构（存储、队列、接口）。"}
+    ],
+    "产品": [
+      {"mode": "HR面", "question": "你觉得优秀的产品经理最重要的三项能力是什么？"},
+      {"mode": "技术面", "question": "请描述一次你从用户反馈到需求落地的完整过程。"},
+      {"mode": "技术面", "question": "你如何做需求优先级排序（KANO / 价值-成本）？"},
+      {"mode": "技术面", "question": "你怎么界定一个功能的上线标准和成功指标？"},
+      {"mode": "压力面", "question": "你作为产品不懂技术细节，怎么和开发有效沟通排期？"},
+      {"mode": "反馈教练", "question": "刚才你讲需求背景不清晰，能补一个用户画像吗？"},
+      {"mode": "反馈教练", "question": "给一个数媒实训平台设计一个“面试陪练”功能的 MVP。"}
+    ],
+    "运营": [
+      {"mode": "HR面", "question": "你更擅长内容运营、用户运营还是活动运营？"},
+      {"mode": "技术面", "question": "你如何衡量一次运营活动的 ROI？"},
+      {"mode": "技术面", "question": "你做过哪些用户增长或留存相关的动作？"},
+      {"mode": "技术面", "question": "你怎么用数据发现运营中的问题？"},
+      {"mode": "压力面", "question": "你说带来增长，但没法归因，怎么说服老板继续投入？"},
+      {"mode": "反馈教练", "question": "刚才你的活动复盘缺少转化漏斗，能补上吗？"},
+      {"mode": "反馈教练", "question": "为 AI 面试产品设计一个冷启动运营方案。"}
+    ],
+    "算法": [
+      {"mode": "HR面", "question": "你更想做推荐、NLP 还是 CV 方向？为什么？"},
+      {"mode": "技术面", "question": "讲讲你对 Transformer 注意力机制的理解。"},
+      {"mode": "技术面", "question": "如何判断模型过拟合？你会用什么方法缓解？"},
+      {"mode": "技术面", "question": "你做过哪些特征工程和样本清洗？"},
+      {"mode": "压力面", "question": "你说模型效果很好，但没说评估集和基线，怎么让人信服？"},
+      {"mode": "反馈教练", "question": "刚才的特征方案缺少线上线下一致性说明，能补吗？"},
+      {"mode": "反馈教练", "question": "设计一个简历与岗位匹配模型的训练和评估方案。"}
+    ],
+    "数媒": [
+      {"mode": "HR面", "question": "你最想从事数媒方向的哪类岗位（影视 / 交互 / 游戏 / 新媒体）？"},
+      {"mode": "技术面", "question": "讲讲你用过的内容创作工具链（Pr / AE / Blender / Unity 等）和产出。"},
+      {"mode": "技术面", "question": "你如何理解交互设计中的信息架构与用户体验？"},
+      {"mode": "技术面", "question": "你做过哪些多媒体作品的数据化运营（播放量 / 转化）？"},
+      {"mode": "压力面", "question": "你的作品偏美术，工程与协作能力看不出，怎么胜任综合岗？"},
+      {"mode": "反馈教练", "question": "刚才的作品阐述缺少设计思路，能讲讲用户洞察吗？"},
+      {"mode": "反馈教练", "question": "为实训课程设计一个融合 AI 的数媒作品展示与评测方案。"}
+    ]
+  }
+}
