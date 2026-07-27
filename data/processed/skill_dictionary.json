@@ -1,0 +1,26 @@
+{
+  "version": "2026-07-24",
+  "normalization_rules": {
+    "Python": ["python", "Python 开发", "Python 编程"],
+    "JavaScript": ["javascript", "js", "Java Script"],
+    "TypeScript": ["typescript", "ts"],
+    "React": ["react", "react.js", "reactjs"],
+    "Vue": ["vue", "vue.js", "vuejs"],
+    "FastAPI": ["fastapi", "fast api"],
+    "REST API": ["rest api", "restful api", "web api", "接口开发"],
+    "SQL": ["sql", "数据库查询", "关系型数据库"],
+    "MySQL": ["mysql", "mysql database"],
+    "LLM": ["llm", "large language model", "大语言模型"],
+    "RAG": ["rag", "retrieval augmented generation", "检索增强生成"],
+    "机器学习": ["machine learning", "ml", "机器学习"],
+    "模型评测": ["model evaluation", "model eval", "模型评估", "模型评测"],
+    "用户研究": ["user research", "customer discovery", "用户访谈"],
+    "产品分析": ["product analytics", "产品数据分析", "usage analytics"],
+    "数据分析": ["data analysis", "data analytics", "数据分析"],
+    "SOP": ["sop", "standard operating procedure", "标准作业流程"],
+    "视频剪辑": ["video editing", "video edit", "视频剪辑"],
+    "内容策略": ["content strategy", "content planning", "内容策略"],
+    "SEO": ["seo", "search engine optimization", "搜索引擎优化"],
+    "GEO": ["geo", "generative engine optimization", "生成式引擎优化"]
+  }
+}
